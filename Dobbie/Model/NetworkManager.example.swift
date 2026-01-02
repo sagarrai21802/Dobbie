@@ -1,14 +1,15 @@
 //
-//  NetworkManager.swift
+//  NetworkManager.example.swift
 //  Dobbie
 //
-//  Created by Apple on 03/12/25.
+//  TEMPLATE FILE - Copy this to NetworkManager.swift and fill in your API key
 //
+
 import Foundation
 
 class NetworkManager {
     
-    let apiKey = "AIzaSyAUsAqfNq3WA6k6_TKggaPUiD7-SceMGbM"
+    let apiKey = "YOUR_GEMINI_API_KEY"
     let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     
     func sendTopic(with topic: String, completion: @escaping (String?) -> Void) {
