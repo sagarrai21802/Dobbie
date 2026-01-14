@@ -5,6 +5,9 @@
 # Secrets configuration (contains API keys)
 Dobbie/Config/Secrets.xcconfig
 
+# Info.plist (contains API keys)
+Dobbie/Info.plist
+
 # LinkedIn OAuth credentials
 
 # Gemini API Key files
