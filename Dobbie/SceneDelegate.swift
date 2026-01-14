@@ -16,9 +16,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Create the SwiftUI view
         guard let windowScene = (scene as? UIWindowScene) else { return }
         
-        // Use SwiftUI PostView as the root
-        let postView = PostView()
-        let hostingController = UIHostingController(rootView: postView)
+        // Use SwiftUI RootView as the root to handle Splash -> Onboarding -> App flow
+        let rootView = RootView()
+        let hostingController = UIHostingController(rootView: rootView)
         
         window = UIWindow(windowScene: windowScene)
         window?.rootViewController = hostingController

@@ -6,14 +6,10 @@
 //
 
 import UIKit
-import FirebaseAuth
-import FirebaseFirestore
 
 class LoginViewController: UIViewController {
     
     @IBOutlet weak var emailtextfield: UITextField!
-//    @IBOutlet weak var emailtextfield : UILabel!
-//    @IBOutlet weak var passwordTextField : UILabel!
     @IBOutlet weak var passwordTextField: UITextField!
     
     override func viewDidLoad() {
@@ -23,16 +19,13 @@ class LoginViewController: UIViewController {
     }
     
     @IBAction func loginButtonPressed(_ sender : UIButton ){
-        if let email = emailtextfield.text , let password = passwordTextField.text {
-            Auth.auth().signIn(withEmail: email, password: password) { authresult, error in
-                if let err = error {
-                    print("error in trying to login \(err.localizedDescription)")
-                    return
-                } else {
-                    print("user sign up successfully")
-                    self.performSegue(withIdentifier: "loginToPoster", sender: self)
-                }
-            }
+        if let email = emailtextfield.text, !email.isEmpty,
+           let password = passwordTextField.text, !password.isEmpty {
+            // TODO: Implement your own authentication logic here
+            print("Login attempt with email: \(email)")
+            self.performSegue(withIdentifier: "loginToPoster", sender: self)
+        } else {
+            print("Please enter email and password")
         }
     }
      

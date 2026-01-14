@@ -6,8 +6,6 @@
 //
 
 import UIKit
-import FirebaseAuth
-import FirebaseFirestore
 
 class RegisterViewController: UIViewController {
     
@@ -23,15 +21,14 @@ class RegisterViewController: UIViewController {
     }
 
     @IBAction func signUpButton(_ sender: UIButton) {
-        if let name = nameTextfield.text, let email = emailTextfield.text , let password = passwordTextfield.text {
-            Auth.auth().createUser(withEmail: email, password: password) { (authResult, error) in
-                if let err = error {
-                    print(err.localizedDescription)
-                } else {
-                    print("user created")
-                    self.performSegue(withIdentifier: "RegisterToPoster", sender: self)
-                }
-            }
+        if let name = nameTextfield.text, !name.isEmpty,
+           let email = emailTextfield.text, !email.isEmpty,
+           let password = passwordTextfield.text, !password.isEmpty {
+            // TODO: Implement your own registration logic here
+            print("Registration attempt - Name: \(name), Email: \(email)")
+            self.performSegue(withIdentifier: "RegisterToPoster", sender: self)
+        } else {
+            print("Please fill in all fields")
         }
     }
     

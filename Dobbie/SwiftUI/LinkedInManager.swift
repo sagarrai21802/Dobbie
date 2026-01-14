@@ -2,12 +2,13 @@
 //  LinkedInManager.swift
 //  Dobbie
 //
-//  SwiftUI-compatible LinkedIn OAuth Manager
+//  SwiftUI-compatible LinkedIn OAuth Manager with token persistence
 //
 
 import Foundation
 import AuthenticationServices
 import Combine
+import Security
 
 @MainActor
 class LinkedInManager: NSObject, ObservableObject {
@@ -50,6 +51,16 @@ class LinkedInManager: NSObject, ObservableObject {
     private var accessToken: String?
     private var memberUrn: String?
     
+    // Keychain keys
+    private let tokenKey = "com.dobbie.linkedin.accessToken"
+    private let urnKey = "com.dobbie.linkedin.memberUrn"
+    
+    // MARK: - Initialization
+    override init() {
+        super.init()
+        loadSavedCredentials()
+    }
+    
     // MARK: - Public Methods
     
     /// Start LinkedIn OAuth flow
@@ -84,6 +95,16 @@ class LinkedInManager: NSObject, ObservableObject {
         webAuthSession?.start()
     }
     
+    /// Disconnect from LinkedIn (clear saved credentials)
+    func disconnect() {
+        accessToken = nil
+        memberUrn = nil
+        isAuthenticated = false
+        deleteFromKeychain(key: tokenKey)
+        deleteFromKeychain(key: urnKey)
+        print("✅ Disconnected from LinkedIn")
+    }
+    
     /// Post content to LinkedIn (with optional image)
     func postToLinkedIn(content: String, imageData: Data? = nil) async {
         guard let token = accessToken, let urn = memberUrn else {
@@ -109,6 +130,72 @@ class LinkedInManager: NSObject, ObservableObject {
             postStatus = .error(error.localizedDescription)
         }
     }
+    
+    // MARK: - Keychain Helpers
+    
+    private func saveToKeychain(key: String, value: String) {
+        let data = value.data(using: .utf8)!
+        
+        // Delete existing item first
+        deleteFromKeychain(key: key)
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecSuccess {
+            print("✅ Saved to Keychain: \(key)")
+        } else {
+            print("❌ Failed to save to Keychain: \(status)")
+        }
+    }
+    
+    private func loadFromKeychain(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var dataTypeRef: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
+        
+        if status == errSecSuccess, let data = dataTypeRef as? Data {
+            return String(data: data, encoding: .utf8)
+        }
+        return nil
+    }
+    
+    private func deleteFromKeychain(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+    
+    private func loadSavedCredentials() {
+        if let savedToken = loadFromKeychain(key: tokenKey),
+           let savedUrn = loadFromKeychain(key: urnKey) {
+            accessToken = savedToken
+            memberUrn = savedUrn
+            isAuthenticated = true
+            print("✅ Loaded saved LinkedIn credentials")
+        }
+    }
+    
+    private func saveCredentials() {
+        guard let token = accessToken, let urn = memberUrn else { return }
+        saveToKeychain(key: tokenKey, value: token)
+        saveToKeychain(key: urnKey, value: urn)
+    }
+    
+    // MARK: - Image Upload
     
     /// Upload image to LinkedIn and return the asset URN
     private func uploadImageToLinkedIn(token: String, authorUrn: String, imageData: Data) async throws -> String {
@@ -292,7 +379,10 @@ class LinkedInManager: NSObject, ObservableObject {
             isAuthenticated = true
             isLoading = false
             
-            print("✅ Access token received, member URN: \(response.member_urn)")
+            // Save credentials to Keychain for persistence
+            saveCredentials()
+            
+            print("✅ Access token received and saved, member URN: \(response.member_urn)")
         } catch {
             errorMessage = "Token exchange failed: \(error.localizedDescription)"
             isLoading = false

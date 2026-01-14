@@ -2,12 +2,14 @@
 # SENSITIVE FILES - NEVER COMMIT
 # ===========================================
 
+# Secrets configuration (contains API keys)
+Dobbie/Config/Secrets.xcconfig
+
 # LinkedIn OAuth credentials
-Dobbie/Model/LinkedinToken.swift
 
 # Gemini API Key files
-Dobbie/Model/NetworkManager.swift
-Dobbie/SwiftUI/ContentGenerator.swift
+# Dobbie/Model/NetworkManager.swift
+# Dobbie/SwiftUI/ContentGenerator.swift
 
 # Server credentials
 server/src/main/resources/application.properties
