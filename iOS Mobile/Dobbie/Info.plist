@@ -33,5 +33,15 @@
         </dict>
     </array>
 
+    <!-- API Keys -->
+    <key>GEMINI_API_KEY</key>
+    <string>AIzaSyAfZugD7KrfVlIwX2-TyoKX0ddCpBzZm7Y</string>
+    <key>LINKEDIN_CLIENT_ID</key>
+    <string>8689oak1ll7q1n</string>
+    <key>LINKEDIN_CLIENT_SECRET</key>
+    <string>REMOVED==</string>
+    <key>LINKEDIN_REDIRECT_URI</key>
+    <string>http://localhost:4000/linkedin</string>
+
 </dict>
 </plist>
