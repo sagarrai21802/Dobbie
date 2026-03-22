@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../providers/linkedin_provider.dart';
+import '../config/api_config.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 
@@ -269,10 +270,7 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
             padding: EdgeInsets.only(top: 10),
             child: Text(
               'This may take time...',
-              style: TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 13,
-              ),
+              style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
             ),
           ),
         const SizedBox(height: 16),
@@ -321,16 +319,13 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey.shade200),
             ),
-            child: Text(
-              switch (provider.previewImageStatus) {
-                'skipped_rate_limited' =>
-                  'Image skipped due to quota/rate limit. You can still post text-only.',
-                'skipped_timeout' =>
-                  'Image generation timed out. You can still post text-only.',
-                _ => 'Image generation failed. You can still post text-only.',
-              },
-              style: const TextStyle(color: Color(0xFF64748B)),
-            ),
+            child: Text(switch (provider.previewImageStatus) {
+              'skipped_rate_limited' =>
+                'Image skipped due to quota/rate limit. You can still post text-only.',
+              'skipped_timeout' =>
+                'Image generation timed out. You can still post text-only.',
+              _ => 'Image generation failed. You can still post text-only.',
+            }, style: const TextStyle(color: Color(0xFF64748B))),
           ),
         const SizedBox(height: 16),
         Row(
@@ -366,6 +361,7 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
 
   Widget _buildPostStep(LinkedInProvider provider) {
     final isConnected = provider.isConnected;
+    final alreadyPublished = provider.hasPublishedCurrentDraft;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,9 +376,11 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          isConnected
-              ? 'You\'re connected to LinkedIn. Ready to post!'
-              : 'Connect your LinkedIn account to post.',
+          !isConnected
+              ? 'Connect your LinkedIn account to post.'
+              : alreadyPublished
+              ? 'This draft is already published. Edit content to post again.'
+              : 'You\'re connected to LinkedIn. Ready to post!',
           style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 24),
@@ -472,10 +470,27 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
           Column(
             children: [
               PrimaryButton(
-                text: 'Post to LinkedIn',
+                text: alreadyPublished ? 'Posted' : 'Post to LinkedIn',
                 isLoading: provider.isPosting,
-                onPressed: () => _postToLinkedIn(provider),
+                onPressed: alreadyPublished
+                    ? null
+                    : () => _postToLinkedIn(provider),
               ),
+              if (alreadyPublished)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle, color: AppTheme.cta, size: 16),
+                      SizedBox(width: 6),
+                      Text(
+                        'Already published',
+                        style: TextStyle(color: AppTheme.cta),
+                      ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () {
@@ -489,6 +504,17 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
                   minimumSize: const Size(double.infinity, 56),
                 ),
               ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: provider.state == LinkedInState.loading
+                    ? null
+                    : () => _disconnectLinkedIn(provider),
+                icon: const Icon(Icons.link_off),
+                label: const Text('Disconnect LinkedIn'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 56),
+                ),
+              ),
             ],
           ),
       ],
@@ -498,45 +524,33 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
   Future<void> _connectLinkedIn(LinkedInProvider provider) async {
     try {
       final oauthUrl = await provider.getOAuthUrl();
-      final uri = Uri.parse(oauthUrl);
+      final callbackUrl = await FlutterWebAuth2.authenticate(
+        url: oauthUrl,
+        callbackUrlScheme: ApiConfig.linkedinCallbackScheme,
+      );
+      final callbackUri = Uri.parse(callbackUrl);
+      final status = callbackUri.queryParameters['status'];
+      final message = callbackUri.queryParameters['message'];
 
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.inAppWebView);
+      if (status == 'error') {
+        throw Exception(message ?? 'LinkedIn authorization failed');
+      }
 
-        if (mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              title: const Text('Complete LinkedIn Connection'),
-              content: const Text(
-                'Please complete the LinkedIn authorization in your browser, then come back to this app.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () async {
-                    Navigator.of(context).pop();
-                    await provider.checkConnectionStatus();
-                    if (!context.mounted) {
-                      return;
-                    }
-                    if (provider.isConnected) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('LinkedIn connected successfully!'),
-                          backgroundColor: AppTheme.cta,
-                        ),
-                      );
-                    }
-                  },
-                  child: const Text('I\'ve Connected'),
-                ),
-              ],
-            ),
-          );
-        }
+      await provider.checkConnectionStatus();
+      if (!mounted) {
+        return;
+      }
+
+      if (provider.isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('LinkedIn connected successfully. Posting now...'),
+            backgroundColor: AppTheme.cta,
+          ),
+        );
+        await _postToLinkedIn(provider);
       } else {
-        throw Exception('Could not launch URL');
+        throw Exception('LinkedIn connection could not be confirmed.');
       }
     } catch (e) {
       if (mounted) {
@@ -551,6 +565,19 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
   }
 
   Future<void> _postToLinkedIn(LinkedInProvider provider) async {
+    if (provider.hasPublishedCurrentDraft) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This draft is already published. Edit it to post again.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     final success = await provider.postToLinkedIn();
     if (success && mounted) {
       final imageStatus = provider.lastImageStatus;
@@ -560,11 +587,13 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
           'Post published. Image generation skipped due to quota or rate limit.',
         'skipped_timeout' =>
           'Post published. Image generation timed out, so text-only was posted.',
-        _ => 'Post published. Image could not be generated, so text-only was posted.',
+        _ =>
+          'Post published. Image could not be generated, so text-only was posted.',
       };
 
       showDialog(
         context: context,
+        barrierDismissible: false,
         builder: (context) => AlertDialog(
           title: const Row(
             children: [
@@ -573,7 +602,9 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
               Text('Success!'),
             ],
           ),
-          content: Text('Your post has been published to LinkedIn!\n\n$imageNote'),
+          content: Text(
+            'Your post has been published to LinkedIn!\n\n$imageNote',
+          ),
           actions: [
             TextButton(
               onPressed: () {
@@ -587,5 +618,26 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _disconnectLinkedIn(LinkedInProvider provider) async {
+    await provider.disconnectLinkedIn();
+    if (!mounted) {
+      return;
+    }
+
+    if (provider.errorMessage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('LinkedIn disconnected successfully.')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(provider.errorMessage!),
+        backgroundColor: AppTheme.error,
+      ),
+    );
   }
 }

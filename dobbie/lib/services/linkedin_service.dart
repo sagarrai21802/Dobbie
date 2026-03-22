@@ -78,6 +78,13 @@ class LinkedInService {
       }
 
       return isConnected;
+    } on ApiException catch (e) {
+      final prefs = await SharedPreferences.getInstance();
+      if (e.statusCode == 400 || e.statusCode == 401) {
+        await prefs.setBool(_linkedinConnectedKey, false);
+        return false;
+      }
+      return prefs.getBool(_linkedinConnectedKey) ?? false;
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(_linkedinConnectedKey) ?? false;
@@ -125,9 +132,11 @@ A visually compelling LinkedIn cover image that represents the post's core messa
   }) async {
     try {
       final wrappedPrompt = _buildImagePromptFromPost(content);
-      final response = await _apiClient.post(ApiConfig.fullLinkedinGenerateImageUrl, {
-        'content': wrappedPrompt,
-      }, requiresAuth: true);
+      final response = await _apiClient.post(
+        ApiConfig.fullLinkedinGenerateImageUrl,
+        {'content': wrappedPrompt},
+        requiresAuth: true,
+      );
       return LinkedInImageResult.fromJson(response as Map<String, dynamic>);
     } on ApiException {
       rethrow;
@@ -142,9 +151,7 @@ A visually compelling LinkedIn cover image that represents the post's core messa
     String? imageStatus,
   }) async {
     try {
-      final body = <String, dynamic>{
-        'content': content,
-      };
+      final body = <String, dynamic>{'content': content};
 
       if (imageUrl != null && imageUrl.isNotEmpty) {
         body['image_url'] = imageUrl;
@@ -168,7 +175,19 @@ A visually compelling LinkedIn cover image that represents the post's core messa
   }
 
   Future<void> disconnect() async {
+    try {
+      await _apiClient.post(
+        ApiConfig.fullLinkedinDisconnectUrl,
+        {},
+        requiresAuth: true,
+      );
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw Exception('Failed to disconnect LinkedIn: $e');
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_linkedinConnectedKey);
+    await prefs.setBool(_linkedinConnectedKey, false);
   }
 }

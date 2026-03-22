@@ -1,7 +1,11 @@
 import httpx
+import logging
 from urllib.parse import urlencode
 from typing import Optional
 from app.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class LinkedInAPIError(Exception):
@@ -15,7 +19,23 @@ class LinkedInService:
         self.client_id = settings.LINKEDIN_CLIENT_ID
         self.client_secret = settings.LINKEDIN_CLIENT_SECRET
         self.redirect_url = settings.LINKEDIN_REDIRECT_URL
-        self.scope = "openid profile w_member_social"
+        self.scope = settings.LINKEDIN_SCOPE
+
+    @staticmethod
+    def _mask_token(token: Optional[str]) -> Optional[str]:
+        if not token:
+            return token
+        return token[:8] + "..." if len(token) > 8 else token
+
+    def _log_token_response(self, token_data: dict, source: str) -> None:
+        safe_log = {
+            "access_token": self._mask_token(token_data.get("access_token")),
+            "refresh_token": self._mask_token(token_data.get("refresh_token")),
+            "expires_in": token_data.get("expires_in"),
+            "refresh_token_expires_in": token_data.get("refresh_token_expires_in"),
+            "scope": token_data.get("scope"),
+        }
+        logger.info("LinkedIn token response (%s, masked): %s", source, safe_log)
         
     def get_authorization_url(self, state: str = "random_state") -> str:
         params = {
@@ -42,7 +62,38 @@ class LinkedInService:
             )
             if response.status_code != 200:
                 raise Exception(f"Failed to exchange code: {response.text}")
-            return response.json()
+            token_data = response.json()
+            self._log_token_response(token_data, "authorization_code")
+            return token_data
+
+    async def refresh_access_token(self, refresh_token: str) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://www.linkedin.com/oauth/v2/accessToken",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+        if response.status_code != 200:
+            raise LinkedInAPIError(
+                message=f"Failed to refresh LinkedIn access token: {response.text}",
+                status_code=response.status_code,
+            )
+
+        token_data = response.json()
+        self._log_token_response(token_data, "refresh_token")
+        if not token_data.get("access_token"):
+            raise LinkedInAPIError(
+                message="LinkedIn refresh response missing access_token",
+                status_code=502,
+            )
+
+        return token_data
 
     async def get_user_profile(self, access_token: str) -> dict:
         async with httpx.AsyncClient() as client:

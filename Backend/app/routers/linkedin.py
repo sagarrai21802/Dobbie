@@ -1,10 +1,14 @@
 import logging
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 from bson import ObjectId
+from urllib.parse import quote
 
 from app.database import get_db
+from app.config import settings
 from app.services.linkedin_service import linkedin_service, LinkedInAPIError
 from app.services.freepik_service import (
     freepik_service,
@@ -58,6 +62,120 @@ class CallbackResponse(BaseModel):
     connected: bool
 
 
+LINKEDIN_EXPIRY_BUFFER_SECONDS = 120
+
+
+def _build_app_redirect_url(status: str, message: Optional[str] = None) -> str:
+    url = f"{settings.LINKEDIN_APP_REDIRECT_URL}?status={quote(status)}"
+    if message:
+        url = f"{url}&message={quote(message)}"
+    return url
+
+
+def _is_token_expired(expires_at: Optional[datetime]) -> bool:
+    if expires_at is None:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    return now >= (expires_at - timedelta(seconds=LINKEDIN_EXPIRY_BUFFER_SECONDS))
+
+
+async def _disconnect_linkedin_account(db, user_id: ObjectId) -> None:
+    await db.users.update_one(
+        {"_id": user_id},
+        {
+            "$set": {"linkedin_connected": False},
+            "$unset": {
+                "linkedin_access_token": "",
+                "linkedin_refresh_token": "",
+                "linkedin_access_token_expires_at": "",
+                "linkedin_refresh_token_expires_at": "",
+                "linkedin_user_id": "",
+                "linkedin_person_urn": "",
+                "linkedin_profile": "",
+            },
+        },
+    )
+
+
+async def _ensure_valid_linkedin_access_token(current_user: dict, db) -> str:
+    access_token = current_user.get("linkedin_access_token")
+    refresh_token = current_user.get("linkedin_refresh_token")
+    expires_at = current_user.get("linkedin_access_token_expires_at")
+    refresh_token_expires_at = current_user.get("linkedin_refresh_token_expires_at")
+    user_id = current_user["_id"]
+
+    if access_token and not _is_token_expired(expires_at):
+        return access_token
+
+    if not refresh_token:
+        await _disconnect_linkedin_account(db, user_id)
+        raise HTTPException(
+            status_code=401,
+            detail="LinkedIn authorization expired. Please reconnect LinkedIn.",
+        )
+
+    if refresh_token_expires_at and _is_token_expired(refresh_token_expires_at):
+        await _disconnect_linkedin_account(db, user_id)
+        raise HTTPException(
+            status_code=401,
+            detail="LinkedIn refresh token expired. Please reconnect LinkedIn.",
+        )
+
+    try:
+        token_data = await linkedin_service.refresh_access_token(refresh_token)
+    except LinkedInAPIError as e:
+        await _disconnect_linkedin_account(db, user_id)
+        raise HTTPException(
+            status_code=401,
+            detail=f"LinkedIn authorization refresh failed: {str(e)}",
+        )
+
+    new_access_token = token_data.get("access_token")
+    if not new_access_token:
+        await _disconnect_linkedin_account(db, user_id)
+        raise HTTPException(
+            status_code=401,
+            detail="LinkedIn refresh returned no access token. Please reconnect LinkedIn.",
+        )
+
+    expires_in = int(token_data.get("expires_in", 0) or 0)
+    now = datetime.now(timezone.utc)
+    new_expires_at = (
+        now + timedelta(seconds=expires_in)
+        if expires_in > 0
+        else now + timedelta(minutes=55)
+    )
+    new_refresh_token = token_data.get("refresh_token") or refresh_token
+    refresh_expires_in = int(token_data.get("refresh_token_expires_in", 0) or 0)
+    new_refresh_expires_at = (
+        now + timedelta(seconds=refresh_expires_in)
+        if refresh_expires_in > 0
+        else refresh_token_expires_at
+    )
+
+    await db.users.update_one(
+        {"_id": user_id},
+        {
+            "$set": {
+                "linkedin_access_token": new_access_token,
+                "linkedin_refresh_token": new_refresh_token,
+                "linkedin_access_token_expires_at": new_expires_at,
+                "linkedin_refresh_token_expires_at": new_refresh_expires_at,
+                "linkedin_connected": True,
+            }
+        },
+    )
+
+    current_user["linkedin_access_token"] = new_access_token
+    current_user["linkedin_refresh_token"] = new_refresh_token
+    current_user["linkedin_access_token_expires_at"] = new_expires_at
+    current_user["linkedin_refresh_token_expires_at"] = new_refresh_expires_at
+    current_user["linkedin_connected"] = True
+    return new_access_token
+
+
 @router.get("/authorize", response_model=AuthorizeResponse)
 async def authorize_linkedin(current_user: dict = Depends(get_current_user)):
     try:
@@ -70,15 +188,22 @@ async def authorize_linkedin(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to get authorization URL")
 
 
-@router.get("/callback", response_model=CallbackResponse)
+@router.get("/callback")
 async def linkedin_callback(
     code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    error_description: Optional[str] = Query(None),
     db=Depends(get_db)
 ):
+    if error:
+        message = error_description or error
+        logger.warning(f"LinkedIn callback error: {error} ({message})")
+        return RedirectResponse(url=_build_app_redirect_url("error", message))
+
     if not code:
         logger.warning("LinkedIn callback missing authorization code")
-        raise HTTPException(status_code=400, detail="Missing authorization code")
+        return JSONResponse(status_code=400, content={"detail": "Missing authorization code"})
 
     if not state:
         logger.warning("LinkedIn callback missing state parameter")
@@ -112,12 +237,25 @@ async def linkedin_callback(
         raise HTTPException(status_code=502, detail="No LinkedIn user ID in profile")
 
     try:
+        expires_in = int(token_data.get("expires_in", 0) or 0)
         result = await db.users.update_one(
             {"_id": ObjectId(user_id)},
             {
                 "$set": {
                     "linkedin_access_token": access_token,
                     "linkedin_refresh_token": token_data.get("refresh_token"),
+                    "linkedin_access_token_expires_at": (
+                        datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                        if expires_in > 0
+                        else None
+                    ),
+                    "linkedin_refresh_token_expires_at": (
+                        datetime.now(timezone.utc) + timedelta(
+                            seconds=int(token_data.get("refresh_token_expires_in", 0) or 0)
+                        )
+                        if int(token_data.get("refresh_token_expires_in", 0) or 0) > 0
+                        else None
+                    ),
                     "linkedin_user_id": linkedin_user_id,
                     "linkedin_person_urn": linkedin_service.build_person_urn(linkedin_user_id),
                     "linkedin_connected": True,
@@ -135,7 +273,7 @@ async def linkedin_callback(
         raise HTTPException(status_code=500, detail="Failed to save LinkedIn credentials")
 
     logger.info(f"LinkedIn connected successfully for user: {user_id}")
-    return CallbackResponse(message="LinkedIn connected successfully", connected=True)
+    return RedirectResponse(url=_build_app_redirect_url("success"))
 
 
 @router.get("/status", response_model=StatusResponse)
@@ -192,14 +330,13 @@ async def generate_linkedin_image(
 @router.post("/post", response_model=PostLinkedInResponse)
 async def post_to_linkedin(
     request: PostLinkedInRequest,
+    db=Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     if not current_user.get("linkedin_connected"):
         raise HTTPException(status_code=400, detail="LinkedIn not connected")
 
-    access_token = current_user.get("linkedin_access_token")
-    if not access_token:
-        raise HTTPException(status_code=400, detail="No LinkedIn access token found")
+    access_token = await _ensure_valid_linkedin_access_token(current_user, db)
 
     linkedin_user_id = current_user.get("linkedin_user_id")
     if not linkedin_user_id:
@@ -224,6 +361,13 @@ async def post_to_linkedin(
             image_status=image_status,
         )
     except LinkedInAPIError as e:
+        if e.status_code == 401:
+            await _disconnect_linkedin_account(db, current_user["_id"])
+            raise HTTPException(
+                status_code=401,
+                detail="LinkedIn authorization expired. Please reconnect LinkedIn.",
+            )
+
         if image_url is not None:
             logger.warning(
                 f"LinkedIn image post failed ({e.status_code}), retrying text-only post: {str(e)}"
@@ -252,3 +396,12 @@ async def post_to_linkedin(
     except Exception as e:
         logger.error(f"Failed to post to LinkedIn: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to post to LinkedIn")
+
+
+@router.post("/disconnect")
+async def disconnect_linkedin(
+    db=Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    await _disconnect_linkedin_account(db, current_user["_id"])
+    return {"detail": "LinkedIn disconnected"}

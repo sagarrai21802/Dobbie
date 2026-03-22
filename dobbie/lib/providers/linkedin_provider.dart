@@ -17,6 +17,7 @@ class LinkedInProvider with ChangeNotifier {
   String? _previewImageStatus;
   String? _lastPostedImageUrl;
   String? _lastImageStatus;
+  String? _lastPublishedDraftFingerprint;
   bool _isGeneratingPost = false;
   bool _isGeneratingImage = false;
 
@@ -34,10 +35,40 @@ class LinkedInProvider with ChangeNotifier {
   String? get previewImageStatus => _previewImageStatus;
   String? get lastPostedImageUrl => _lastPostedImageUrl;
   String? get lastImageStatus => _lastImageStatus;
+  bool get hasPublishedCurrentDraft {
+    final current = _currentDraftFingerprint();
+    return current != null &&
+        _lastPublishedDraftFingerprint != null &&
+        current == _lastPublishedDraftFingerprint;
+  }
+
   bool get isGeneratingPost => _isGeneratingPost;
   bool get isGeneratingImage => _isGeneratingImage;
   bool get isConnected => _state == LinkedInState.connected;
   bool get isPosting => _state == LinkedInState.posting;
+
+  String? _currentDraftFingerprint() {
+    final content = (_editedPost ?? _generatedPost)?.trim();
+    if (content == null || content.isEmpty) {
+      return null;
+    }
+    final imageUrl = (_previewImageUrl ?? '').trim();
+    final imageStatus = (_previewImageStatus ?? '').trim();
+    return '$content|$imageUrl|$imageStatus';
+  }
+
+  bool _isLinkedInDisconnectedError(ApiException e) {
+    final status = e.statusCode;
+    if (status != 400 && status != 401) {
+      return false;
+    }
+
+    final msg = e.message.toLowerCase();
+    return msg.contains('linkedin not connected') ||
+        msg.contains('reconnect linkedin') ||
+        msg.contains('authorization expired') ||
+        msg.contains('no linkedin access token');
+  }
 
   Future<void> checkConnectionStatus() async {
     _state = LinkedInState.loading;
@@ -83,6 +114,7 @@ class LinkedInProvider with ChangeNotifier {
       _editedPost = null;
       _previewImageUrl = null;
       _previewImageStatus = null;
+      _lastPublishedDraftFingerprint = null;
     } catch (e) {
       _errorMessage = 'Failed to generate post: ${e.toString()}';
     } finally {
@@ -104,7 +136,9 @@ class LinkedInProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _linkedInService.generateImageForPost(content: postContent);
+      final result = await _linkedInService.generateImageForPost(
+        content: postContent,
+      );
       _previewImageUrl = result.imageUrl;
       _previewImageStatus = result.imageStatus;
     } on ApiException catch (e) {
@@ -134,6 +168,15 @@ class LinkedInProvider with ChangeNotifier {
       return false;
     }
 
+    final currentFingerprint = _currentDraftFingerprint();
+    if (currentFingerprint != null &&
+        _lastPublishedDraftFingerprint == currentFingerprint) {
+      _errorMessage =
+          'This draft is already published. Edit it or generate a new post.';
+      notifyListeners();
+      return false;
+    }
+
     _state = LinkedInState.posting;
     _errorMessage = null;
     notifyListeners();
@@ -146,12 +189,18 @@ class LinkedInProvider with ChangeNotifier {
       );
       _lastPostedImageUrl = result.imageUrl;
       _lastImageStatus = result.imageStatus;
+      _lastPublishedDraftFingerprint = currentFingerprint;
       _state = LinkedInState.connected;
       notifyListeners();
       return true;
     } on ApiException catch (e) {
       _errorMessage = e.message;
-      _state = LinkedInState.connected;
+      if (_isLinkedInDisconnectedError(e)) {
+        await _linkedInService.disconnect();
+        _state = LinkedInState.disconnected;
+      } else {
+        _state = LinkedInState.connected;
+      }
       notifyListeners();
       return false;
     } catch (e) {
@@ -162,6 +211,22 @@ class LinkedInProvider with ChangeNotifier {
     }
   }
 
+  Future<void> disconnectLinkedIn() async {
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _linkedInService.disconnect();
+      _state = LinkedInState.disconnected;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+    } catch (e) {
+      _errorMessage = 'Failed to disconnect LinkedIn: ${e.toString()}';
+    }
+
+    notifyListeners();
+  }
+
   void clearPost() {
     _generatedPost = null;
     _editedPost = null;
@@ -170,6 +235,7 @@ class LinkedInProvider with ChangeNotifier {
     _previewImageStatus = null;
     _lastPostedImageUrl = null;
     _lastImageStatus = null;
+    _lastPublishedDraftFingerprint = null;
     notifyListeners();
   }
 

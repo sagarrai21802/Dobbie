@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import 'token_service.dart';
 
 class ApiException implements Exception {
@@ -15,6 +17,7 @@ class ApiException implements Exception {
 class ApiClient {
   final TokenService _tokenService;
   final http.Client _client;
+  Completer<bool>? _refreshCompleter;
 
   ApiClient({TokenService? tokenService, http.Client? client})
     : _tokenService = tokenService ?? TokenService(),
@@ -38,9 +41,10 @@ class ApiClient {
 
   Future<dynamic> get(String url, {bool requiresAuth = false}) async {
     try {
-      final headers = await _getHeaders(requiresAuth: requiresAuth);
-      final response = await _client.get(Uri.parse(url), headers: headers);
-      return _handleResponse(response);
+      return await _sendWithAuthRetry(
+        (headers) => _client.get(Uri.parse(url), headers: headers),
+        requiresAuth: requiresAuth,
+      );
     } on ApiException {
       rethrow;
     } catch (e) {
@@ -54,13 +58,14 @@ class ApiClient {
     bool requiresAuth = false,
   }) async {
     try {
-      final headers = await _getHeaders(requiresAuth: requiresAuth);
-      final response = await _client.post(
-        Uri.parse(url),
-        headers: headers,
-        body: jsonEncode(body),
+      return await _sendWithAuthRetry(
+        (headers) => _client.post(
+          Uri.parse(url),
+          headers: headers,
+          body: jsonEncode(body),
+        ),
+        requiresAuth: requiresAuth,
       );
-      return _handleResponse(response);
     } on ApiException {
       rethrow;
     } catch (e) {
@@ -74,18 +79,110 @@ class ApiClient {
     bool requiresAuth = false,
   }) async {
     try {
-      final headers = await _getHeaders(requiresAuth: requiresAuth);
-      final response = await _client.put(
-        Uri.parse(url),
-        headers: headers,
-        body: jsonEncode(body),
+      return await _sendWithAuthRetry(
+        (headers) => _client.put(
+          Uri.parse(url),
+          headers: headers,
+          body: jsonEncode(body),
+        ),
+        requiresAuth: requiresAuth,
       );
-      return _handleResponse(response);
     } on ApiException {
       rethrow;
     } catch (e) {
       throw ApiException('Network error: ${e.toString()}');
     }
+  }
+
+  Future<dynamic> _sendWithAuthRetry(
+    Future<http.Response> Function(Map<String, String> headers) send, {
+    required bool requiresAuth,
+  }) async {
+    final headers = await _getHeaders(requiresAuth: requiresAuth);
+    final response = await send(headers);
+
+    if (requiresAuth && response.statusCode == 401) {
+      final refreshed = await _refreshTokensWithGuard();
+      if (!refreshed) {
+        await _tokenService.clearTokens();
+        throw ApiException(
+          'Session expired. Please sign in again.',
+          statusCode: 401,
+        );
+      }
+
+      final retryHeaders = await _getHeaders(requiresAuth: true);
+      final retryResponse = await send(retryHeaders);
+      if (retryResponse.statusCode == 401) {
+        await _tokenService.clearTokens();
+        throw ApiException(
+          'Session expired. Please sign in again.',
+          statusCode: 401,
+        );
+      }
+      return _handleResponse(retryResponse);
+    }
+
+    return _handleResponse(response);
+  }
+
+  Future<bool> _refreshTokensWithGuard() async {
+    if (_refreshCompleter != null) {
+      return _refreshCompleter!.future;
+    }
+
+    final completer = Completer<bool>();
+    _refreshCompleter = completer;
+
+    try {
+      final refreshed = await _refreshTokens();
+      if (!completer.isCompleted) {
+        completer.complete(refreshed);
+      }
+      return refreshed;
+    } catch (_) {
+      if (!completer.isCompleted) {
+        completer.complete(false);
+      }
+      return false;
+    } finally {
+      _refreshCompleter = null;
+    }
+  }
+
+  Future<bool> _refreshTokens() async {
+    final refreshToken = await _tokenService.getRefreshToken();
+    if (refreshToken == null || refreshToken.isEmpty) {
+      return false;
+    }
+
+    final response = await _client.post(
+      Uri.parse(ApiConfig.fullRefreshUrl),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode({'refresh_token': refreshToken}),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return false;
+    }
+
+    final body = response.body.isNotEmpty ? jsonDecode(response.body) : null;
+    if (body is! Map<String, dynamic>) {
+      return false;
+    }
+
+    final accessToken = body['access_token'] as String?;
+    final newRefreshToken = (body['refresh_token'] as String?) ?? refreshToken;
+
+    if (accessToken == null || accessToken.isEmpty) {
+      return false;
+    }
+
+    await _tokenService.saveTokens(accessToken, newRefreshToken);
+    return true;
   }
 
   dynamic _handleResponse(http.Response response) {

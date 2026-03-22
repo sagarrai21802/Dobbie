@@ -1,6 +1,7 @@
 class ApiConfig {
   static const String baseUrl = 'http://localhost:8000';
   static const String apiPrefix = '/api/v1';
+  static const String linkedinCallbackScheme = 'dobbie';
 
   // Auth endpoints
   static const String registerEndpoint = '$apiPrefix/auth/register';
@@ -20,6 +21,8 @@ class ApiConfig {
   static const String linkedinGenerateImageEndpoint =
       '$apiPrefix/auth/linkedin/generate-image';
   static const String linkedinPostEndpoint = '$apiPrefix/auth/linkedin/post';
+  static const String linkedinDisconnectEndpoint =
+      '$apiPrefix/auth/linkedin/disconnect';
 
   // URLs
   static String get fullRegisterUrl => '$baseUrl$registerEndpoint';
@@ -31,7 +34,9 @@ class ApiConfig {
   static String get fullLinkedinAuthorizeUrl =>
       '$baseUrl$linkedinAuthorizeEndpoint';
   static String get fullLinkedinStatusUrl => '$baseUrl$linkedinStatusEndpoint';
-    static String get fullLinkedinGenerateImageUrl =>
-            '$baseUrl$linkedinGenerateImageEndpoint';
+  static String get fullLinkedinGenerateImageUrl =>
+      '$baseUrl$linkedinGenerateImageEndpoint';
   static String get fullLinkedinPostUrl => '$baseUrl$linkedinPostEndpoint';
+  static String get fullLinkedinDisconnectUrl =>
+      '$baseUrl$linkedinDisconnectEndpoint';
 }

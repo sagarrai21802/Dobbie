@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     LINKEDIN_CLIENT_ID: str = ""
     LINKEDIN_CLIENT_SECRET: str = ""
     LINKEDIN_REDIRECT_URL: str = ""
+    LINKEDIN_SCOPE: str = "openid profile w_member_social email"
+    LINKEDIN_APP_REDIRECT_URL: str = "dobbie://linkedin/connected"
 
     class Config:
         env_file = ".env"
