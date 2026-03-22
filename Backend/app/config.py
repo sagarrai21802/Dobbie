@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Gemini API Configuration
+    GEMINI_API_KEY: str = ""
+
+    # LinkedIn OAuth Configuration
+    LINKEDIN_CLIENT_ID: str = ""
+    LINKEDIN_CLIENT_SECRET: str = ""
+    LINKEDIN_REDIRECT_URL: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True

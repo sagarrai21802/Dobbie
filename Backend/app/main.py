@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import connect_to_mongo, close_mongo_connection
-from app.routers import posts, auth
+from app.routers import posts, auth, ai
+from app.routers.linkedin import router as linkedin_router
 
 
 @asynccontextmanager
@@ -39,6 +40,8 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(posts.router, prefix=settings.API_V1_PREFIX)
+app.include_router(ai.router, prefix=settings.API_V1_PREFIX)
+app.include_router(linkedin_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")
