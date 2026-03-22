@@ -28,6 +28,10 @@ class TokenService {
 
   Future<bool> hasTokens() async {
     final accessToken = await getAccessToken();
-    return accessToken != null && accessToken.isNotEmpty;
+    final refreshToken = await getRefreshToken();
+
+    final hasAccess = accessToken != null && accessToken.isNotEmpty;
+    final hasRefresh = refreshToken != null && refreshToken.isNotEmpty;
+    return hasAccess || hasRefresh;
   }
 }

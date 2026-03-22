@@ -227,7 +227,7 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Edit the post if needed, then proceed to post on LinkedIn.',
+          'Edit the post, generate an image preview, then proceed to posting.',
           style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 24),
@@ -254,6 +254,84 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        PrimaryButton(
+          text: provider.previewImageUrl != null
+              ? 'Regenerate Image'
+              : 'Generate Image',
+          isLoading: provider.isGeneratingImage,
+          onPressed: () async {
+            await provider.generateImagePreview();
+          },
+        ),
+        if (provider.isGeneratingImage)
+          const Padding(
+            padding: EdgeInsets.only(top: 10),
+            child: Text(
+              'This may take time...',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 13,
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
+        if (provider.previewImageUrl != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Image Preview',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(
+                    provider.previewImageUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          'Preview image could not be loaded. You can still post.',
+                          style: TextStyle(color: AppTheme.error),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          )
+        else if (provider.previewImageStatus != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Text(
+              switch (provider.previewImageStatus) {
+                'skipped_rate_limited' =>
+                  'Image skipped due to quota/rate limit. You can still post text-only.',
+                'skipped_timeout' =>
+                  'Image generation timed out. You can still post text-only.',
+                _ => 'Image generation failed. You can still post text-only.',
+              },
+              style: const TextStyle(color: Color(0xFF64748B)),
+            ),
+          ),
         const SizedBox(height: 16),
         Row(
           children: [
@@ -475,6 +553,16 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
   Future<void> _postToLinkedIn(LinkedInProvider provider) async {
     final success = await provider.postToLinkedIn();
     if (success && mounted) {
+      final imageStatus = provider.lastImageStatus;
+      final imageNote = switch (imageStatus) {
+        'generated' => 'Cover image generated and included in the post.',
+        'skipped_rate_limited' =>
+          'Post published. Image generation skipped due to quota or rate limit.',
+        'skipped_timeout' =>
+          'Post published. Image generation timed out, so text-only was posted.',
+        _ => 'Post published. Image could not be generated, so text-only was posted.',
+      };
+
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
@@ -485,7 +573,7 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
               Text('Success!'),
             ],
           ),
-          content: const Text('Your post has been published to LinkedIn!'),
+          content: Text('Your post has been published to LinkedIn!\n\n$imageNote'),
           actions: [
             TextButton(
               onPressed: () {

@@ -23,22 +23,35 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> checkAuthStatus() async {
     _state = AuthState.loading;
+    _errorMessage = null;
     notifyListeners();
 
     try {
-      final isLoggedIn = await _authService.isLoggedIn();
-      if (isLoggedIn) {
-        _user = await _authService.getCurrentUser();
-        if (_user != null) {
-          _state = AuthState.authenticated;
+      final user = await _authService.getCurrentUser();
+      if (user != null) {
+        _user = user;
+        _state = AuthState.authenticated;
+      } else {
+        final hasAnyToken = await _authService.isLoggedIn();
+        if (hasAnyToken) {
+          _state = AuthState.error;
+          _errorMessage = 'Session check failed. Please retry.';
         } else {
+          _user = null;
           _state = AuthState.unauthenticated;
         }
-      } else {
+      }
+    } on ApiException catch (e) {
+      if (e.statusCode == 401) {
+        _user = null;
         _state = AuthState.unauthenticated;
+      } else {
+        _state = AuthState.error;
+        _errorMessage = 'Network/server issue. Please try again.';
       }
     } catch (e) {
-      _state = AuthState.unauthenticated;
+      _state = AuthState.error;
+      _errorMessage = 'Unable to verify session right now.';
     }
     notifyListeners();
   }

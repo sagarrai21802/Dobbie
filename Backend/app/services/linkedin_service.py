@@ -1,5 +1,6 @@
 import httpx
 from urllib.parse import urlencode
+from typing import Optional
 from app.config import settings
 
 
@@ -60,16 +61,119 @@ class LinkedInService:
             return linkedin_user_id
         return f"urn:li:person:{linkedin_user_id}"
 
-    async def create_post(self, access_token: str, content: str, author_urn: str) -> dict:
+    async def _download_image_bytes(self, image_url: str) -> tuple[bytes, str]:
         async with httpx.AsyncClient() as client:
+            response = await client.get(image_url)
+            if response.status_code != 200:
+                raise LinkedInAPIError(
+                    message=f"Failed to download generated image: {response.text}",
+                    status_code=response.status_code,
+                )
+            content_type = response.headers.get("Content-Type", "image/png")
+            return response.content, content_type
+
+    async def _register_image_upload(self, access_token: str, author_urn: str) -> tuple[str, str]:
+        payload = {
+            "registerUploadRequest": {
+                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                "owner": author_urn,
+                "serviceRelationships": [
+                    {
+                        "relationshipType": "OWNER",
+                        "identifier": "urn:li:userGeneratedContent",
+                    }
+                ],
+            }
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.linkedin.com/v2/assets?action=registerUpload",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                    "X-Restli-Protocol-Version": "2.0.0",
+                },
+            )
+
+        if response.status_code != 200:
+            raise LinkedInAPIError(
+                message=f"Failed to register LinkedIn image upload: {response.text}",
+                status_code=response.status_code,
+            )
+
+        value = response.json().get("value", {})
+        upload_url = (
+            value.get("uploadMechanism", {})
+            .get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest", {})
+            .get("uploadUrl")
+        )
+        asset_urn = value.get("asset")
+
+        if not upload_url or not asset_urn:
+            raise LinkedInAPIError(
+                message="LinkedIn register upload response missing uploadUrl or asset URN",
+                status_code=500,
+            )
+
+        return upload_url, asset_urn
+
+    async def _upload_image_bytes(self, upload_url: str, image_bytes: bytes, content_type: str) -> None:
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                upload_url,
+                content=image_bytes,
+                headers={
+                    "Content-Type": content_type,
+                },
+            )
+
+        if response.status_code not in (200, 201):
+            raise LinkedInAPIError(
+                message=f"Failed to upload image to LinkedIn: {response.text}",
+                status_code=response.status_code,
+            )
+
+    async def create_post(
+        self,
+        access_token: str,
+        content: str,
+        author_urn: str,
+        image_url: Optional[str] = None,
+    ) -> dict:
+        media_asset_urn: Optional[str] = None
+
+        if image_url:
+            image_bytes, content_type = await self._download_image_bytes(image_url)
+            upload_url, media_asset_urn = await self._register_image_upload(access_token, author_urn)
+            await self._upload_image_bytes(upload_url, image_bytes, content_type)
+
+        async with httpx.AsyncClient() as client:
+            share_content = {
+                "shareCommentary": {"text": content},
+                "shareMediaCategory": "NONE",
+            }
+
+            if media_asset_urn:
+                share_content = {
+                    "shareCommentary": {"text": content},
+                    "shareMediaCategory": "IMAGE",
+                    "media": [
+                        {
+                            "status": "READY",
+                            "description": {"text": "AI generated cover image"},
+                            "media": media_asset_urn,
+                            "title": {"text": "Post cover"},
+                        }
+                    ],
+                }
+
             post_data = {
                 "author": author_urn,
                 "lifecycleState": "PUBLISHED",
                 "specificContent": {
-                    "com.linkedin.ugc.ShareContent": {
-                        "shareCommentary": {"text": content},
-                        "shareMediaCategory": "NONE",
-                    }
+                    "com.linkedin.ugc.ShareContent": share_content
                 },
                 "visibility": {
                     "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"

@@ -17,6 +17,8 @@ class ApiConfig {
       '$apiPrefix/auth/linkedin/authorize';
   static const String linkedinStatusEndpoint =
       '$apiPrefix/auth/linkedin/status';
+  static const String linkedinGenerateImageEndpoint =
+      '$apiPrefix/auth/linkedin/generate-image';
   static const String linkedinPostEndpoint = '$apiPrefix/auth/linkedin/post';
 
   // URLs
@@ -29,5 +31,7 @@ class ApiConfig {
   static String get fullLinkedinAuthorizeUrl =>
       '$baseUrl$linkedinAuthorizeEndpoint';
   static String get fullLinkedinStatusUrl => '$baseUrl$linkedinStatusEndpoint';
+    static String get fullLinkedinGenerateImageUrl =>
+            '$baseUrl$linkedinGenerateImageEndpoint';
   static String get fullLinkedinPostUrl => '$baseUrl$linkedinPostEndpoint';
 }

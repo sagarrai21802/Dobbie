@@ -64,18 +64,34 @@ class AuthService {
   }
 
   Future<UserModel?> getCurrentUser() async {
-    try {
-      final hasToken = await _tokenService.hasTokens();
-      if (!hasToken) return null;
+    final hasAnyToken = await _tokenService.hasTokens();
+    if (!hasAnyToken) return null;
 
-      final response = await _apiClient.get(
-        ApiConfig.fullMeUrl,
-        requiresAuth: true,
-      );
-      return UserModel.fromJson(response);
+    try {
+      return await _callMeEndpoint();
+    } on ApiException catch (e) {
+      if (e.statusCode != 401) {
+        rethrow;
+      }
+
+      // Access token likely expired; try one refresh and retry /me.
+      try {
+        await refreshToken();
+        return await _callMeEndpoint();
+      } catch (_) {
+        return null;
+      }
     } catch (_) {
       return null;
     }
+  }
+
+  Future<UserModel?> _callMeEndpoint() async {
+    final response = await _apiClient.get(
+      ApiConfig.fullMeUrl,
+      requiresAuth: true,
+    );
+    return UserModel.fromJson(response);
   }
 
   Future<bool> isLoggedIn() async {

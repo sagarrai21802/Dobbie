@@ -6,6 +6,14 @@ from bson import ObjectId
 
 from app.database import get_db
 from app.services.linkedin_service import linkedin_service, LinkedInAPIError
+from app.services.freepik_service import (
+    freepik_service,
+    FreepikConfigurationError,
+    FreepikRateLimitError,
+    FreepikTimeoutError,
+    FreepikTaskFailedError,
+    FreepikServiceError,
+)
 from app.utils.dependencies import get_current_user
 from app.utils.security import create_oauth_state, verify_oauth_state
 
@@ -16,6 +24,24 @@ router = APIRouter(prefix="/auth/linkedin", tags=["LinkedIn"])
 
 class PostLinkedInRequest(BaseModel):
     content: str
+    image_url: Optional[str] = None
+    image_status: Optional[str] = None
+
+
+class GenerateLinkedInImageRequest(BaseModel):
+    content: str
+
+
+class GenerateLinkedInImageResponse(BaseModel):
+    image_url: Optional[str] = None
+    image_status: str
+
+
+class PostLinkedInResponse(BaseModel):
+    success: bool
+    post_id: Optional[str] = None
+    image_url: Optional[str] = None
+    image_status: str
 
 
 class AuthorizeResponse(BaseModel):
@@ -123,7 +149,47 @@ async def get_linkedin_status(current_user: dict = Depends(get_current_user)):
     )
 
 
-@router.post("/post")
+@router.post("/generate-image", response_model=GenerateLinkedInImageResponse)
+async def generate_linkedin_image(
+    request: GenerateLinkedInImageRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if not request.content or not request.content.strip():
+        raise HTTPException(status_code=400, detail="Post content is required")
+
+    try:
+        image_url = await freepik_service.generate_image_from_post_text(request.content)
+        if image_url:
+            return GenerateLinkedInImageResponse(
+                image_url=image_url,
+                image_status="generated",
+            )
+
+        return GenerateLinkedInImageResponse(
+            image_url=None,
+            image_status="skipped_failed",
+        )
+    except FreepikRateLimitError as e:
+        logger.warning(f"Freepik generation skipped due to rate limit/quota: {str(e)}")
+        return GenerateLinkedInImageResponse(
+            image_url=None,
+            image_status="skipped_rate_limited",
+        )
+    except FreepikTimeoutError as e:
+        logger.warning(f"Freepik generation timed out: {str(e)}")
+        return GenerateLinkedInImageResponse(
+            image_url=None,
+            image_status="skipped_timeout",
+        )
+    except (FreepikTaskFailedError, FreepikConfigurationError, FreepikServiceError) as e:
+        logger.warning(f"Freepik generation failed and will be skipped: {str(e)}")
+        return GenerateLinkedInImageResponse(
+            image_url=None,
+            image_status="skipped_failed",
+        )
+
+
+@router.post("/post", response_model=PostLinkedInResponse)
 async def post_to_linkedin(
     request: PostLinkedInRequest,
     current_user: dict = Depends(get_current_user),
@@ -141,10 +207,46 @@ async def post_to_linkedin(
 
     author_urn = current_user.get("linkedin_person_urn") or linkedin_service.build_person_urn(linkedin_user_id)
 
+    image_url = request.image_url
+    image_status = request.image_status or ("generated" if image_url else "skipped_failed")
+
     try:
-        result = await linkedin_service.create_post(access_token, request.content, author_urn)
-        return {"success": True, "post_id": result.get("id")}
+        result = await linkedin_service.create_post(
+            access_token,
+            request.content,
+            author_urn,
+            image_url=image_url,
+        )
+        return PostLinkedInResponse(
+            success=True,
+            post_id=result.get("id"),
+            image_url=image_url,
+            image_status=image_status,
+        )
     except LinkedInAPIError as e:
+        if image_url is not None:
+            logger.warning(
+                f"LinkedIn image post failed ({e.status_code}), retrying text-only post: {str(e)}"
+            )
+            try:
+                result = await linkedin_service.create_post(
+                    access_token,
+                    request.content,
+                    author_urn,
+                    image_url=None,
+                )
+                return PostLinkedInResponse(
+                    success=True,
+                    post_id=result.get("id"),
+                    image_url=None,
+                    image_status="skipped_failed",
+                )
+            except LinkedInAPIError as fallback_error:
+                logger.error(
+                    f"LinkedIn fallback text-only post API error ({fallback_error.status_code}): {str(fallback_error)}"
+                )
+                raise HTTPException(status_code=fallback_error.status_code, detail=str(fallback_error))
+
         logger.error(f"LinkedIn post API error ({e.status_code}): {str(e)}")
         raise HTTPException(status_code=e.status_code, detail=str(e))
     except Exception as e:

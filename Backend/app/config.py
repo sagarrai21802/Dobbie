@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     # Gemini API Configuration
     GEMINI_API_KEY: str = ""
 
+    # Freepik Mystic Configuration
+    FREEPIK_API_KEY: str = ""
+    FREEPIK_BASE_URL: str = "https://api.freepik.com"
+    FREEPIK_MYSTIC_POLL_INTERVAL_SECONDS: int = 3
+    FREEPIK_MYSTIC_MAX_ATTEMPTS: int = 10
+
     # LinkedIn OAuth Configuration
     LINKEDIN_CLIENT_ID: str = ""
     LINKEDIN_CLIENT_SECRET: str = ""
