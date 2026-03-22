@@ -55,6 +55,8 @@ class LinkedInService {
         'content': content,
       }, requiresAuth: true);
       return response;
+    } on ApiException {
+      rethrow;
     } catch (e) {
       throw Exception('Failed to post to LinkedIn: $e');
     }

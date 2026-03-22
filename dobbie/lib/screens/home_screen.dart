@@ -19,139 +19,85 @@ class HomeScreen extends StatelessWidget {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () => _handleLogout(context),
-          ),
-        ],
-      ),
-      body: Consumer<AuthProvider>(
-        builder: (context, authProvider, _) {
-          final user = authProvider.user;
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: AppTheme.cta,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      size: 56,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Welcome to Dobbie!',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.text,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'You are now signed in',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: AppTheme.text.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  _buildLinkedInCard(context),
-                  const SizedBox(height: 24),
-                  if (user != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Consumer<AuthProvider>(
+              builder: (context, authProvider, _) {
+                final user = authProvider.user;
+                return PopupMenuButton<_ProfileMenuAction>(
+                  tooltip: 'Profile',
+                  onSelected: (action) =>
+                      _onProfileMenuSelected(context, action),
+                  itemBuilder: (context) => [
+                    PopupMenuItem<_ProfileMenuAction>(
+                      enabled: false,
+                      child: SizedBox(
+                        width: 220,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              user?.fullName ?? 'Account',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              user?.email ?? 'No email',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppTheme.text.withValues(alpha: 0.65),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem<_ProfileMenuAction>(
+                      value: _ProfileMenuAction.logout,
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primary.withValues(
-                                    alpha: 0.1,
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.person,
-                                  color: AppTheme.primary,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      user.fullName,
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppTheme.text,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      user.email,
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: AppTheme.text.withValues(
-                                          alpha: 0.6,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                          Icon(
+                            Icons.logout,
+                            color: Color(0xFFDC2626),
+                            size: 20,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'Log Out',
+                            style: TextStyle(color: Color(0xFFDC2626)),
                           ),
                         ],
                       ),
                     ),
                   ],
-                  const SizedBox(height: 48),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _handleLogout(context),
-                      icon: const Icon(Icons.logout),
-                      label: const Text('Sign Out'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFDC2626),
-                        side: const BorderSide(
-                          color: Color(0xFFDC2626),
-                          width: 2,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    child: const Icon(
+                      Icons.person,
+                      color: Colors.white,
+                      size: 20,
                     ),
                   ),
-                ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      body: Consumer<AuthProvider>(
+        builder: (context, authProvider, _) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [_buildLinkedInCard(context)],
               ),
             ),
           );
@@ -239,6 +185,13 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  void _onProfileMenuSelected(BuildContext context, _ProfileMenuAction action) {
+    switch (action) {
+      case _ProfileMenuAction.logout:
+        _handleLogout(context);
+    }
+  }
+
   Future<void> _handleLogout(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -272,3 +225,5 @@ class HomeScreen extends StatelessWidget {
     }
   }
 }
+
+enum _ProfileMenuAction { logout }

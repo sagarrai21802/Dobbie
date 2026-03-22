@@ -41,6 +41,8 @@ class ApiClient {
       final headers = await _getHeaders(requiresAuth: requiresAuth);
       final response = await _client.get(Uri.parse(url), headers: headers);
       return _handleResponse(response);
+    } on ApiException {
+      rethrow;
     } catch (e) {
       throw ApiException('Network error: ${e.toString()}');
     }
@@ -59,6 +61,8 @@ class ApiClient {
         body: jsonEncode(body),
       );
       return _handleResponse(response);
+    } on ApiException {
+      rethrow;
     } catch (e) {
       throw ApiException('Network error: ${e.toString()}');
     }
@@ -77,6 +81,8 @@ class ApiClient {
         body: jsonEncode(body),
       );
       return _handleResponse(response);
+    } on ApiException {
+      rethrow;
     } catch (e) {
       throw ApiException('Network error: ${e.toString()}');
     }

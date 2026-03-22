@@ -3,6 +3,12 @@ from urllib.parse import urlencode
 from app.config import settings
 
 
+class LinkedInAPIError(Exception):
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class LinkedInService:
     def __init__(self):
         self.client_id = settings.LINKEDIN_CLIENT_ID
@@ -47,10 +53,17 @@ class LinkedInService:
                 raise Exception(f"Failed to get user profile: {response.text}")
             return response.json()
 
-    async def create_post(self, access_token: str, content: str) -> dict:
+    @staticmethod
+    def build_person_urn(linkedin_user_id: str) -> str:
+        linkedin_user_id = (linkedin_user_id or "").strip()
+        if linkedin_user_id.startswith("urn:li:person:"):
+            return linkedin_user_id
+        return f"urn:li:person:{linkedin_user_id}"
+
+    async def create_post(self, access_token: str, content: str, author_urn: str) -> dict:
         async with httpx.AsyncClient() as client:
             post_data = {
-                "author": "urn:li:person:ME",
+                "author": author_urn,
                 "lifecycleState": "PUBLISHED",
                 "specificContent": {
                     "com.linkedin.ugc.ShareContent": {
@@ -72,7 +85,10 @@ class LinkedInService:
                 },
             )
             if response.status_code != 201:
-                raise Exception(f"Failed to create post: {response.text}")
+                raise LinkedInAPIError(
+                    message=f"Failed to create post: {response.text}",
+                    status_code=response.status_code,
+                )
             return response.json()
 
 

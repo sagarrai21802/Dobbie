@@ -423,7 +423,7 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
       final uri = Uri.parse(oauthUrl);
 
       if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        await launchUrl(uri, mode: LaunchMode.inAppWebView);
 
         if (mounted) {
           showDialog(
@@ -439,7 +439,10 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
                   onPressed: () async {
                     Navigator.of(context).pop();
                     await provider.checkConnectionStatus();
-                    if (provider.isConnected && mounted) {
+                    if (!context.mounted) {
+                      return;
+                    }
+                    if (provider.isConnected) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('LinkedIn connected successfully!'),

@@ -5,7 +5,7 @@ from typing import Optional
 from bson import ObjectId
 
 from app.database import get_db
-from app.services.linkedin_service import linkedin_service
+from app.services.linkedin_service import linkedin_service, LinkedInAPIError
 from app.utils.dependencies import get_current_user
 from app.utils.security import create_oauth_state, verify_oauth_state
 
@@ -93,6 +93,7 @@ async def linkedin_callback(
                     "linkedin_access_token": access_token,
                     "linkedin_refresh_token": token_data.get("refresh_token"),
                     "linkedin_user_id": linkedin_user_id,
+                    "linkedin_person_urn": linkedin_service.build_person_urn(linkedin_user_id),
                     "linkedin_connected": True,
                     "linkedin_profile": profile,
                 }
@@ -134,9 +135,18 @@ async def post_to_linkedin(
     if not access_token:
         raise HTTPException(status_code=400, detail="No LinkedIn access token found")
 
+    linkedin_user_id = current_user.get("linkedin_user_id")
+    if not linkedin_user_id:
+        raise HTTPException(status_code=400, detail="LinkedIn user ID missing. Please reconnect LinkedIn.")
+
+    author_urn = current_user.get("linkedin_person_urn") or linkedin_service.build_person_urn(linkedin_user_id)
+
     try:
-        result = await linkedin_service.create_post(access_token, request.content)
+        result = await linkedin_service.create_post(access_token, request.content, author_urn)
         return {"success": True, "post_id": result.get("id")}
+    except LinkedInAPIError as e:
+        logger.error(f"LinkedIn post API error ({e.status_code}): {str(e)}")
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to post to LinkedIn: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to post: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to post to LinkedIn")
