@@ -1,14 +1,13 @@
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from fastapi import Request
 from app.config import settings
 
 client: AsyncIOMotorClient = None
-db = None
 
 
 async def connect_to_mongo():
-    global client, db
+    global client
     client = AsyncIOMotorClient(settings.DATABASE_URL)
-    db = client[settings.DATABASE_NAME]
 
 
 async def close_mongo_connection():
@@ -17,5 +16,5 @@ async def close_mongo_connection():
         client.close()
 
 
-def get_db():
-    return db
+async def get_db(request: Request):
+    yield request.app.state.db

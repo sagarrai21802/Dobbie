@@ -11,15 +11,16 @@ from app.routers.linkedin import router as linkedin_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_to_mongo()
-    await create_indexes()
+    from app.database import client
+    from app.config import settings as cfg
+    app.state.db = client[cfg.DATABASE_NAME]
+    await create_indexes(app)
     yield
     await close_mongo_connection()
 
 
-async def create_indexes():
-    from app.database import db
-    from pymongo import ASCENDING
-    await db.users.create_index("email", unique=True)
+async def create_indexes(app: FastAPI):
+    await app.state.db.users.create_index("email", unique=True)
 
 
 app = FastAPI(

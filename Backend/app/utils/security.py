@@ -1,3 +1,6 @@
+import hmac
+import hashlib
+import base64
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
@@ -77,3 +80,39 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     if not any(c.isdigit() for c in password):
         return False, "Password must contain at least one number"
     return True, ""
+
+
+def create_oauth_state(user_id: str) -> str:
+    """
+    Create a signed OAuth state parameter.
+    Format: base64(user_id.signature)
+    """
+    signature = hmac.new(
+        settings.JWT_SECRET_KEY.encode(),
+        user_id.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    return base64.urlsafe_b64encode(f"{user_id}.{signature}".encode()).decode()
+
+
+def verify_oauth_state(state: str) -> Optional[str]:
+    """
+    Verify an OAuth state parameter and return the user_id if valid.
+    Returns None if state is invalid, tampered, or malformed.
+    """
+    try:
+        decoded = base64.urlsafe_b64decode(state).decode()
+        parts = decoded.rsplit(".", 1)
+        if len(parts) != 2:
+            return None
+        user_id, signature = parts
+        expected_signature = hmac.new(
+            settings.JWT_SECRET_KEY.encode(),
+            user_id.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        if hmac.compare_digest(signature, expected_signature):
+            return user_id
+        return None
+    except Exception:
+        return None
