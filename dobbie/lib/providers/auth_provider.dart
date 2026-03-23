@@ -80,6 +80,30 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> signInWithGoogle() async {
+    _state = AuthState.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _authService.googleSignIn();
+      _user = await _authService.getCurrentUser();
+      _state = AuthState.authenticated;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      _state = AuthState.error;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Google Sign-In failed. Please try again.';
+      _state = AuthState.error;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> signUp({
     required String email,
     required String password,

@@ -16,8 +16,23 @@ class ProfileProvider with ChangeNotifier {
   String? errorMessage;
   Map<String, dynamic>? extractedData;
 
+  bool get hasPersonalizationStarted {
+    final current = profile;
+    if (current == null) {
+      return false;
+    }
+
+    return current.name.trim().isNotEmpty ||
+        current.headline.trim().isNotEmpty ||
+        current.location.trim().isNotEmpty ||
+        current.currentRole.trim().isNotEmpty ||
+        current.industry.trim().isNotEmpty ||
+        current.skills.isNotEmpty ||
+        (current.yearsExperience != null && current.yearsExperience! >= 0);
+  }
+
   ProfileProvider({ProfileService? profileService})
-      : _profileService = profileService ?? ProfileService();
+    : _profileService = profileService ?? ProfileService();
 
   Future<void> loadProfile() async {
     isLoading = true;

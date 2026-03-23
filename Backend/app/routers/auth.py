@@ -6,6 +6,7 @@ from app.database import get_db
 from app.schemas.auth import (
     UserRegister,
     UserLogin,
+    GoogleLogin,
     TokenResponse,
     TokenRefresh,
     UserResponse,
@@ -55,6 +56,30 @@ async def login(user_data: UserLogin, db=Depends(get_db)):
         db,
         email=user_data.email,
         password=user_data.password
+    )
+    
+    if error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error
+        )
+    
+    return tokens
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_login(google_data: GoogleLogin, db=Depends(get_db)):
+    """
+    Authenticate user via Google ID token and return JWT tokens.
+    
+    - **id_token**: Google ID token from flutter_signin_google
+    
+    The token is verified server-side and the user is created or updated
+    in the database. Returns standard JWT tokens for subsequent requests.
+    """
+    tokens, error = await AuthService.google_login(
+        db,
+        id_token_str=google_data.id_token
     )
     
     if error:

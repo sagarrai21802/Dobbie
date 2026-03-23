@@ -2,6 +2,7 @@ import '../config/api_config.dart';
 import '../models/auth_models.dart';
 import 'api_client.dart';
 import 'token_service.dart';
+import 'google_signin_service.dart';
 
 class AuthService {
   final ApiClient _apiClient;
@@ -35,6 +36,32 @@ class AuthService {
     final tokens = TokenModel.fromJson(response);
     await _tokenService.saveTokens(tokens.accessToken, tokens.refreshToken);
     return tokens;
+  }
+
+  Future<TokenModel> googleSignIn() async {
+    final googleSignIn = GoogleSignInService();
+    
+    try {
+      final idToken = await googleSignIn.signIn();
+      if (idToken == null) {
+        throw Exception('Google Sign-In was cancelled');
+      }
+
+      // Send ID token to backend for verification and JWT generation
+      final response = await _apiClient.post(ApiConfig.fullGoogleLoginUrl, {
+        'id_token': idToken,
+      });
+      
+      final tokens = TokenModel.fromJson(response);
+      await _tokenService.saveTokens(tokens.accessToken, tokens.refreshToken);
+      return tokens;
+    } catch (e) {
+      // Clean up on error
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   Future<TokenModel> refreshToken() async {

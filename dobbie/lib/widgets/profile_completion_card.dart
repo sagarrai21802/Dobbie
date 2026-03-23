@@ -4,11 +4,13 @@ import '../theme/app_theme.dart';
 
 class ProfileCompletionCard extends StatelessWidget {
   final bool isComplete;
+  final bool isStarted;
   final VoidCallback onTap;
 
   const ProfileCompletionCard({
     super.key,
     required this.isComplete,
+    required this.isStarted,
     required this.onTap,
   });
 
@@ -44,13 +46,35 @@ class ProfileCompletionCard extends StatelessWidget {
               ),
               if (isComplete)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF059669),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: const Text(
                     'Complete',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              else if (isStarted)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0369A1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'In Progress',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -70,7 +94,13 @@ class ProfileCompletionCard extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: onTap,
-              child: Text(isComplete ? 'Update Profile' : 'Set Up Personalization'),
+              child: Text(
+                isComplete
+                    ? 'Update Profile'
+                    : (isStarted
+                          ? 'Continue Personalization'
+                          : 'Set Up Personalization'),
+              ),
             ),
           ),
         ],

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'sign_in_screen.dart';
 import 'sign_up_screen.dart';
+import 'home_screen.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 
 class AuthScreen extends StatelessWidget {
   const AuthScreen({super.key});
@@ -20,8 +23,6 @@ class AuthScreen extends StatelessWidget {
               _buildWelcomeText(context),
               const Spacer(flex: 2),
               _buildAuthButtons(context),
-              const SizedBox(height: 24),
-              _buildSkipButton(context),
               const Spacer(flex: 1),
             ],
           ),
@@ -108,57 +109,69 @@ class AuthScreen extends StatelessWidget {
   }
 
   Widget _buildGoogleButton(BuildContext context) {
-    return OutlinedButton(
-      onPressed: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Google Sign In (Coming soon)'),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      },
-      style: OutlinedButton.styleFrom(
-        side: const BorderSide(color: Color(0xFFE2E8F0), width: 2),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(4)),
-            child: const Icon(
-              Icons.g_mobiledata,
-              size: 28,
-              color: Color(0xFF4285F4),
+    return Consumer<AuthProvider>(builder: (context, authProvider, _) {
+      return OutlinedButton(
+        onPressed: authProvider.isLoading
+            ? null
+            : () => _handleGoogleSignIn(context, authProvider),
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFFE2E8F0), width: 2),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(4)),
+              child: const Icon(
+                Icons.g_mobiledata,
+                size: 28,
+                color: Color(0xFF4285F4),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          const Text('Continue with Google'),
-        ],
-      ),
-    );
+            const SizedBox(width: 12),
+            Text(
+              authProvider.isLoading ? 'Signing in...' : 'Continue with Google',
+            ),
+          ],
+        ),
+      );
+    });
   }
 
-  Widget _buildSkipButton(BuildContext context) {
-    return TextButton(
-      onPressed: () {
+  Future<void> _handleGoogleSignIn(
+    BuildContext context,
+    AuthProvider authProvider,
+  ) async {
+    try {
+      final success = await authProvider.signInWithGoogle();
+      if (success && context.mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (route) => false,
+        );
+      } else if (context.mounted && authProvider.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Skip (Coming soon)'),
+            content: Text(authProvider.errorMessage!),
             behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 1),
+            backgroundColor: AppTheme.error,
           ),
         );
-      },
-      child: Text(
-        'Skip for now',
-        style: TextStyle(
-          color: AppTheme.text.withValues(alpha: 0.6),
-          fontSize: 14,
-        ),
-      ),
-    );
+        authProvider.clearError();
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google Sign-In failed: ${e.toString()}'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
   }
+
 }

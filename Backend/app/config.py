@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     LINKEDIN_SCOPE: str = "openid profile w_member_social email"
     LINKEDIN_APP_REDIRECT_URL: str = "dobbie://linkedin/connected"
 
+    # Google OAuth Configuration
+    GOOGLE_PROJECT_ID: str = ""
+    GOOGLE_ANDROID_CLIENT_ID: str = ""
+    GOOGLE_IOS_CLIENT_ID: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True

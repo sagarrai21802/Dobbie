@@ -12,6 +12,16 @@
 .swiftpm/
 migrate_working_dir/
 
+# Google OAuth Credentials (DO NOT COMMIT)
+client_secret_*.json
+client_*.plist
+GoogleService-Info.plist
+*.json
+
+# Environment variable files
+.env
+.env.local
+
 # IntelliJ related
 *.iml
 *.ipr

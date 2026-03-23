@@ -24,6 +24,10 @@ class UserLogin(BaseModel):
     password: str = Field(..., description="User password")
 
 
+class GoogleLogin(BaseModel):
+    id_token: str = Field(..., description="Google ID token from flutter_signin_google")
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

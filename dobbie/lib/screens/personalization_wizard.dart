@@ -22,6 +22,7 @@ class PersonalizationWizard extends StatefulWidget {
 
 class _PersonalizationWizardState extends State<PersonalizationWizard> {
   int _step = 0;
+  int _guideSlideIndex = 0;
   String? _uploadedFileName;
   bool _uploadSuccess = false;
 
@@ -164,11 +165,78 @@ class _PersonalizationWizardState extends State<PersonalizationWizard> {
           style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        const Text('How to get it:'),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.language, color: AppTheme.primary, size: 18),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Use LinkedIn in browser only (not LinkedIn app). Turn on Desktop site first.',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF334155)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 360,
+          child: PageView(
+            onPageChanged: (index) {
+              setState(() {
+                _guideSlideIndex = index;
+              });
+            },
+            children: const [
+              _GuideSlide(
+                imageUrl:
+                    'https://res.cloudinary.com/dywwto9il/image/upload/v1774232768/home_view_gmhn6e.png',
+                title: 'Step 1: Open LinkedIn in browser',
+                subtitle:
+                    'Open browser, go to LinkedIn, and switch to Desktop site.',
+              ),
+              _GuideSlide(
+                imageUrl:
+                    'https://res.cloudinary.com/dywwto9il/image/upload/v1774232768/profile_sffspu.png',
+                title: 'Step 2: Open profile and tap 3 dots',
+                subtitle:
+                    'From profile, tap the 3-dot menu, then choose Save to PDF.',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(2, (index) {
+            final isActive = _guideSlideIndex == index;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              width: isActive ? 18 : 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: isActive ? AppTheme.primary : const Color(0xFFCBD5E1),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            );
+          }),
+        ),
         const SizedBox(height: 8),
-        const Text('1. Go to LinkedIn and open your profile'),
-        const Text('2. Tap More and choose Save to PDF'),
-        const Text('3. Upload that file here'),
+        Text(
+          _guideSlideIndex == 0
+              ? 'After enabling Desktop site, open your profile.'
+              : 'Download the PDF, then return here and upload it.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+        ),
         const SizedBox(height: 14),
         ElevatedButton.icon(
           onPressed: profileProvider.isUploading ? null : _pickAndUploadPdf,
@@ -524,6 +592,71 @@ class _Point extends StatelessWidget {
           const Icon(Icons.check, color: AppTheme.cta, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(text)),
+        ],
+      ),
+    );
+  }
+}
+
+class _GuideSlide extends StatelessWidget {
+  final String imageUrl;
+  final String title;
+  final String subtitle;
+
+  const _GuideSlide({
+    required this.imageUrl,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                imageUrl,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) {
+                    return child;
+                  }
+                  return const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return const Center(
+                    child: Text(
+                      'Image could not be loaded',
+                      style: TextStyle(color: AppTheme.error),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+          ),
         ],
       ),
     );

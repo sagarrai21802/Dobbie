@@ -104,24 +104,24 @@ class ApiClient {
     bool requiresAuth = false,
   }) async {
     try {
-      return await _sendMultipartWithAuthRetry(
-        (headers) {
-          final request = http.MultipartRequest('POST', Uri.parse(url));
-          request.headers.addAll(headers);
-          if (fields != null && fields.isNotEmpty) {
-            request.fields.addAll(fields);
-          }
-          request.files.add(
-            http.MultipartFile.fromBytes(
-              fileField,
-              fileBytes,
-              filename: filename,
-            ),
-          );
-          return _client.send(request);
-        },
-        requiresAuth: requiresAuth,
-      );
+      return await _sendMultipartWithAuthRetry((headers) {
+        final request = http.MultipartRequest('POST', Uri.parse(url));
+        final multipartHeaders = Map<String, String>.from(headers)
+          ..remove('Content-Type')
+          ..remove('content-type');
+        request.headers.addAll(multipartHeaders);
+        if (fields != null && fields.isNotEmpty) {
+          request.fields.addAll(fields);
+        }
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            fileField,
+            fileBytes,
+            filename: filename,
+          ),
+        );
+        return _client.send(request);
+      }, requiresAuth: requiresAuth);
     } on ApiException {
       rethrow;
     } catch (e) {
@@ -267,7 +267,9 @@ class ApiClient {
     throw ApiException(errorMessage, statusCode: response.statusCode);
   }
 
-  Future<dynamic> _handleStreamedResponse(http.StreamedResponse response) async {
+  Future<dynamic> _handleStreamedResponse(
+    http.StreamedResponse response,
+  ) async {
     final bodyString = await response.stream.bytesToString();
     dynamic body;
     if (bodyString.isNotEmpty) {

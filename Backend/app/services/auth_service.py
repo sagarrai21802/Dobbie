@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
+from google.auth.transport import requests
+from google.oauth2 import id_token
 
 from app.models.user import create_user_document, user_to_response
 from app.utils.security import (
@@ -73,6 +75,89 @@ class AuthService:
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }, None
+
+    @staticmethod
+    async def google_login(db, id_token_str: str) -> tuple[Optional[dict], Optional[str]]:
+        """
+        Authenticate user via Google ID token and return JWT tokens.
+        Verifies token and upserts user by email.
+        Returns (token_response, error_message)
+        """
+        try:
+            # Verify the ID token using google-auth library
+            # This validates signature, audience, and expiration
+            client_ids = [
+                settings.GOOGLE_ANDROID_CLIENT_ID,
+                settings.GOOGLE_IOS_CLIENT_ID,
+            ]
+            
+            # Try to verify with either Android or iOS client ID
+            payload = None
+            for client_id in client_ids:
+                try:
+                    payload = id_token.verify_oauth2_token(
+                        id_token_str,
+                        requests.Request(),
+                        cid=client_id
+                    )
+                    break  # Successfully verified
+                except ValueError:
+                    continue  # Try next client ID
+            
+            if payload is None:
+                return None, "Invalid or expired Google ID token"
+            
+            # Extract essential user info from the verified token
+            email = payload.get("email", "").lower().strip()
+            full_name = payload.get("name", "Unknown User")
+            google_id = payload.get("sub")
+            
+            if not email or not google_id:
+                return None, "Invalid Google token: missing email or ID"
+            
+            # Check if user already exists by email
+            existing_user = await db.users.find_one({"email": email})
+            
+            if existing_user:
+                # User exists - just update last login time if needed
+                if not existing_user.get("is_active", True):
+                    return None, "Account is deactivated"
+                
+                await db.users.update_one(
+                    {"_id": existing_user["_id"]},
+                    {"$set": {
+                        "updated_at": datetime.now(timezone.utc),
+                        "auth_provider": "google"  # Mark as Google auth
+                    }}
+                )
+                user = existing_user
+            else:
+                # Create new user from Google login (no password needed)
+                user_doc = create_user_document(
+                    email=email,
+                    password_hash="",  # Empty password for Google users
+                    full_name=full_name,
+                    auth_provider="google"
+                )
+                result = await db.users.insert_one(user_doc)
+                user_doc["_id"] = result.inserted_id
+                user = user_doc
+            
+            # Generate JWT tokens
+            access_token = create_access_token(data={"sub": str(user["_id"])})
+            refresh_token = create_refresh_token(data={"sub": str(user["_id"])})
+            
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            }, None
+            
+        except ValueError as e:
+            return None, f"Google token verification failed: {str(e)}"
+        except Exception as e:
+            return None, f"Google login error: {str(e)}"
 
     @staticmethod
     async def refresh_token(db, refresh_token: str) -> tuple[Optional[dict], Optional[str]]:

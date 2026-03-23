@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:provider/provider.dart';
 
+import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/linkedin_provider.dart';
 import '../providers/profile_provider.dart';
@@ -87,7 +89,9 @@ class _AccountScreenState extends State<AccountScreen> {
               builder: (context, profileProvider, _) {
                 return ProfileCompletionCard(
                   isComplete: profileProvider.isProfileComplete,
-                  onTap: () => _openPersonalizationWizard(context, profileProvider),
+                  isStarted: profileProvider.hasPersonalizationStarted,
+                  onTap: () =>
+                      _openPersonalizationWizard(context, profileProvider),
                 );
               },
             ),
@@ -101,12 +105,21 @@ class _AccountScreenState extends State<AccountScreen> {
             Consumer<LinkedInProvider>(
               builder: (context, linkedInProvider, _) {
                 final connected = linkedInProvider.isConnected;
+                final isBusy = linkedInProvider.state == LinkedInState.loading;
                 return _tile(
                   icon: Icons.link,
                   title: 'LinkedIn Connection',
                   subtitle: connected ? 'Connected' : 'Not connected',
-                  trailingColor: connected ? const Color(0xFF059669) : AppTheme.error,
-                  onTap: () {},
+                  trailing: Switch.adaptive(
+                    value: connected,
+                    activeColor: const Color(0xFF059669),
+                    onChanged: isBusy
+                        ? null
+                        : (value) => _handleLinkedInToggle(
+                            provider: linkedInProvider,
+                            targetValue: value,
+                          ),
+                  ),
                 );
               },
             ),
@@ -127,7 +140,8 @@ class _AccountScreenState extends State<AccountScreen> {
     required IconData icon,
     required String title,
     required String subtitle,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
+    Widget? trailing,
     Color trailingColor = AppTheme.text,
   }) {
     return Padding(
@@ -166,13 +180,111 @@ class _AccountScreenState extends State<AccountScreen> {
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right, color: trailingColor),
+                trailing ?? Icon(Icons.chevron_right, color: trailingColor),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _handleLinkedInToggle({
+    required LinkedInProvider provider,
+    required bool targetValue,
+  }) async {
+    if (targetValue) {
+      await _connectLinkedIn(provider);
+      return;
+    }
+
+    final shouldDisconnect = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Disconnect LinkedIn?'),
+        content: const Text(
+          'This will disconnect your LinkedIn account. To connect again, you will need to log in again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDisconnect != true || !mounted) {
+      return;
+    }
+
+    await provider.disconnectLinkedIn();
+    if (!mounted) {
+      return;
+    }
+
+    if (provider.errorMessage == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('LinkedIn disconnected.')));
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(provider.errorMessage!),
+        backgroundColor: AppTheme.error,
+      ),
+    );
+  }
+
+  Future<void> _connectLinkedIn(LinkedInProvider provider) async {
+    try {
+      final oauthUrl = await provider.getOAuthUrl();
+      final callbackUrl = await FlutterWebAuth2.authenticate(
+        url: oauthUrl,
+        callbackUrlScheme: ApiConfig.linkedinCallbackScheme,
+      );
+      final callbackUri = Uri.parse(callbackUrl);
+      final status = callbackUri.queryParameters['status'];
+      final message = callbackUri.queryParameters['message'];
+
+      if (status == 'error') {
+        throw Exception(message ?? 'LinkedIn authorization failed');
+      }
+
+      await provider.checkConnectionStatus();
+      if (!mounted) {
+        return;
+      }
+
+      if (provider.isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('LinkedIn connected successfully.'),
+            backgroundColor: AppTheme.cta,
+          ),
+        );
+        return;
+      }
+
+      throw Exception('LinkedIn connection could not be confirmed.');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to connect: ${e.toString()}'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
   }
 
   Future<void> _openPersonalizationWizard(

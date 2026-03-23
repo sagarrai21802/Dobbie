@@ -18,13 +18,14 @@ def _default_profile_document() -> dict:
     }
 
 
-def create_user_document(email: str, password_hash: str, full_name: str) -> dict:
+def create_user_document(email: str, password_hash: str, full_name: str, auth_provider: str = "email") -> dict:
     """Create a new user document for MongoDB."""
     now = datetime.now(timezone.utc)
     return {
         "email": email.lower().strip(),
         "password_hash": password_hash,
         "full_name": full_name.strip(),
+        "auth_provider": auth_provider,  # 'email', 'google', 'linkedin', etc.
         "is_active": True,
         "profile": _default_profile_document(),
         "created_at": now,
