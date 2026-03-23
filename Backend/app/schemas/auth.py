@@ -40,6 +40,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     is_active: bool
+    profile: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 

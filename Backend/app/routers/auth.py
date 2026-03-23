@@ -137,6 +137,7 @@ async def get_current_user_profile(current_user: dict = Depends(get_current_user
         "email": current_user["email"],
         "full_name": current_user["full_name"],
         "is_active": current_user["is_active"],
+        "profile": current_user.get("profile"),
         "created_at": current_user["created_at"],
         "updated_at": current_user["updated_at"],
     }

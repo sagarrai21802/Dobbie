@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'token_service.dart';
@@ -94,6 +95,40 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> postMultipart(
+    String url, {
+    required String fileField,
+    required Uint8List fileBytes,
+    required String filename,
+    Map<String, String>? fields,
+    bool requiresAuth = false,
+  }) async {
+    try {
+      return await _sendMultipartWithAuthRetry(
+        (headers) {
+          final request = http.MultipartRequest('POST', Uri.parse(url));
+          request.headers.addAll(headers);
+          if (fields != null && fields.isNotEmpty) {
+            request.fields.addAll(fields);
+          }
+          request.files.add(
+            http.MultipartFile.fromBytes(
+              fileField,
+              fileBytes,
+              filename: filename,
+            ),
+          );
+          return _client.send(request);
+        },
+        requiresAuth: requiresAuth,
+      );
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Network error: ${e.toString()}');
+    }
+  }
+
   Future<dynamic> _sendWithAuthRetry(
     Future<http.Response> Function(Map<String, String> headers) send, {
     required bool requiresAuth,
@@ -124,6 +159,38 @@ class ApiClient {
     }
 
     return _handleResponse(response);
+  }
+
+  Future<dynamic> _sendMultipartWithAuthRetry(
+    Future<http.StreamedResponse> Function(Map<String, String> headers) send, {
+    required bool requiresAuth,
+  }) async {
+    final headers = await _getHeaders(requiresAuth: requiresAuth);
+    final response = await send(headers);
+
+    if (requiresAuth && response.statusCode == 401) {
+      final refreshed = await _refreshTokensWithGuard();
+      if (!refreshed) {
+        await _tokenService.clearTokens();
+        throw ApiException(
+          'Session expired. Please sign in again.',
+          statusCode: 401,
+        );
+      }
+
+      final retryHeaders = await _getHeaders(requiresAuth: true);
+      final retryResponse = await send(retryHeaders);
+      if (retryResponse.statusCode == 401) {
+        await _tokenService.clearTokens();
+        throw ApiException(
+          'Session expired. Please sign in again.',
+          statusCode: 401,
+        );
+      }
+      return _handleStreamedResponse(retryResponse);
+    }
+
+    return _handleStreamedResponse(response);
   }
 
   Future<bool> _refreshTokensWithGuard() async {
@@ -194,6 +261,25 @@ class ApiClient {
 
     String errorMessage = 'An error occurred';
     if (body != null && body is Map<String, dynamic>) {
+      errorMessage = body['detail'] ?? body['message'] ?? errorMessage;
+    }
+
+    throw ApiException(errorMessage, statusCode: response.statusCode);
+  }
+
+  Future<dynamic> _handleStreamedResponse(http.StreamedResponse response) async {
+    final bodyString = await response.stream.bytesToString();
+    dynamic body;
+    if (bodyString.isNotEmpty) {
+      body = jsonDecode(bodyString);
+    }
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return body;
+    }
+
+    String errorMessage = 'An error occurred';
+    if (body is Map<String, dynamic>) {
       errorMessage = body['detail'] ?? body['message'] ?? errorMessage;
     }
 

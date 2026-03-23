@@ -17,6 +17,8 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
   final TextEditingController _topicController = TextEditingController();
   final TextEditingController _postController = TextEditingController();
   int _currentStep = 0;
+  bool _isRevealingResearchTopic = false;
+  String? _revealingTopic;
 
   @override
   void initState() {
@@ -144,6 +146,10 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
   }
 
   Widget _buildTopicStep(LinkedInProvider provider) {
+    if (provider.hasResearchTopics) {
+      return _buildResearchTopicsStep(provider);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -161,6 +167,21 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
           style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 24),
+        PrimaryButton(
+          text: 'Research',
+          isLoading: provider.isResearching,
+          onPressed: () async {
+            await provider.fetchResearchTopics();
+          },
+        ),
+        const SizedBox(height: 12),
+        const Center(
+          child: Text(
+            'or create manually',
+            style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+          ),
+        ),
+        const SizedBox(height: 12),
         TextField(
           controller: _topicController,
           maxLines: 4,
@@ -212,6 +233,112 @@ class _LinkedInPostScreenState extends State<LinkedInPostScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildResearchTopicsStep(LinkedInProvider provider) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Trending Topics for Today',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.text,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Tap any topic to instantly open its pre-generated post content.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+        ),
+        const SizedBox(height: 20),
+        ...provider.researchTopics.map((topic) {
+          final isRevealing = _isRevealingResearchTopic && _revealingTopic == topic.topic;
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _isRevealingResearchTopic
+                  ? null
+                  : () => _revealResearchTopic(provider, topic.topic),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      topic.topic,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.text,
+                        fontSize: 15,
+                      ),
+                    ),
+                    if (isRevealing) ...[
+                      const SizedBox(height: 12),
+                      const LinearProgressIndicator(minHeight: 3),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Loading pre-generated content...',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _isRevealingResearchTopic
+              ? null
+              : () => provider.clearResearchTopics(),
+          icon: const Icon(Icons.edit),
+          label: const Text('Use custom topic instead'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 56),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _revealResearchTopic(
+    LinkedInProvider provider,
+    String topicText,
+  ) async {
+    final selected = provider.researchTopics.where((item) => item.topic == topicText);
+    if (selected.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isRevealingResearchTopic = true;
+      _revealingTopic = topicText;
+    });
+
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    provider.applyResearchTopic(selected.first);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isRevealingResearchTopic = false;
+      _revealingTopic = null;
+      _currentStep = 1;
+      _postController.text = provider.generatedPost ?? '';
+    });
   }
 
   Widget _buildGenerateStep(LinkedInProvider provider) {

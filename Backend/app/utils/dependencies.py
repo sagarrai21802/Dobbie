@@ -6,6 +6,7 @@ from app.database import get_db
 from app.utils.security import decode_token
 
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
@@ -58,3 +59,32 @@ async def get_current_active_user(
 ) -> dict:
     """Get current active user (alias for get_current_user)."""
     return current_user
+
+
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+    db=Depends(get_db),
+) -> Optional[dict]:
+    """Best-effort user resolution. Returns None when token is missing/invalid."""
+    if credentials is None:
+        return None
+
+    token = credentials.credentials
+    payload = decode_token(token)
+    if payload is None or payload.get("type") != "access":
+        return None
+
+    user_id: str = payload.get("sub")
+    if not user_id:
+        return None
+
+    from bson import ObjectId
+    try:
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        return None
+
+    if user is None or not user.get("is_active", True):
+        return None
+
+    return user

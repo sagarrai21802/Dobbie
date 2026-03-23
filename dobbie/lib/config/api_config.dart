@@ -12,6 +12,12 @@ class ApiConfig {
 
   // AI/Content Generation endpoints
   static const String generatePostEndpoint = '$apiPrefix/ai/generate-post';
+    static const String researchTopicsEndpoint = '$apiPrefix/ai/research-topics';
+
+    // Profile personalization endpoints
+    static const String profileUploadPdfEndpoint = '$apiPrefix/profile/upload-pdf';
+    static const String profileSaveEndpoint = '$apiPrefix/profile/save';
+    static const String profileMeEndpoint = '$apiPrefix/profile/me';
 
   // LinkedIn OAuth & API endpoints (backend handles credentials)
   static const String linkedinAuthorizeEndpoint =
@@ -31,6 +37,10 @@ class ApiConfig {
   static String get fullLogoutUrl => '$baseUrl$logoutEndpoint';
   static String get fullMeUrl => '$baseUrl$meEndpoint';
   static String get fullGeneratePostUrl => '$baseUrl$generatePostEndpoint';
+    static String get fullResearchTopicsUrl => '$baseUrl$researchTopicsEndpoint';
+    static String get fullProfileUploadPdfUrl => '$baseUrl$profileUploadPdfEndpoint';
+    static String get fullProfileSaveUrl => '$baseUrl$profileSaveEndpoint';
+    static String get fullProfileMeUrl => '$baseUrl$profileMeEndpoint';
   static String get fullLinkedinAuthorizeUrl =>
       '$baseUrl$linkedinAuthorizeEndpoint';
   static String get fullLinkedinStatusUrl => '$baseUrl$linkedinStatusEndpoint';

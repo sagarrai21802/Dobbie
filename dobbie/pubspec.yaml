@@ -50,6 +50,9 @@ dependencies:
   # OAuth callback handling
   flutter_web_auth_2: ^3.0.0
 
+  # Pick LinkedIn PDF from device storage
+  file_picker: ^10.1.9
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

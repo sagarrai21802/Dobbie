@@ -18,8 +18,11 @@ class LinkedInProvider with ChangeNotifier {
   String? _lastPostedImageUrl;
   String? _lastImageStatus;
   String? _lastPublishedDraftFingerprint;
+  List<ResearchTopic> _researchTopics = [];
+  String? _selectedResearchTopic;
   bool _isGeneratingPost = false;
   bool _isGeneratingImage = false;
+  bool _isResearching = false;
 
   LinkedInProvider({
     LinkedInService? linkedInService,
@@ -44,8 +47,12 @@ class LinkedInProvider with ChangeNotifier {
 
   bool get isGeneratingPost => _isGeneratingPost;
   bool get isGeneratingImage => _isGeneratingImage;
+  bool get isResearching => _isResearching;
   bool get isConnected => _state == LinkedInState.connected;
   bool get isPosting => _state == LinkedInState.posting;
+  List<ResearchTopic> get researchTopics => List.unmodifiable(_researchTopics);
+  bool get hasResearchTopics => _researchTopics.isNotEmpty;
+  String? get selectedResearchTopic => _selectedResearchTopic;
 
   String? _currentDraftFingerprint() {
     final content = (_editedPost ?? _generatedPost)?.trim();
@@ -112,6 +119,7 @@ class LinkedInProvider with ChangeNotifier {
     try {
       _generatedPost = await _geminiService.generateLinkedInPost(topic);
       _editedPost = null;
+      _selectedResearchTopic = null;
       _previewImageUrl = null;
       _previewImageStatus = null;
       _lastPublishedDraftFingerprint = null;
@@ -157,6 +165,41 @@ class LinkedInProvider with ChangeNotifier {
 
   void updateEditedPost(String post) {
     _editedPost = post;
+    notifyListeners();
+  }
+
+  Future<void> fetchResearchTopics() async {
+    _isResearching = true;
+    _errorMessage = null;
+    _researchTopics = [];
+    notifyListeners();
+
+    try {
+      _researchTopics = await _geminiService.generateResearchTopics();
+      _selectedResearchTopic = null;
+    } catch (e) {
+      _errorMessage = 'Failed to fetch research topics: ${e.toString()}';
+      _researchTopics = [];
+    } finally {
+      _isResearching = false;
+      notifyListeners();
+    }
+  }
+
+  void applyResearchTopic(ResearchTopic topic) {
+    _selectedResearchTopic = topic.topic;
+    _generatedPost = topic.content;
+    _editedPost = null;
+    _previewImageUrl = null;
+    _previewImageStatus = null;
+    _lastPublishedDraftFingerprint = null;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  void clearResearchTopics() {
+    _researchTopics = [];
+    _selectedResearchTopic = null;
     notifyListeners();
   }
 
@@ -231,6 +274,8 @@ class LinkedInProvider with ChangeNotifier {
     _generatedPost = null;
     _editedPost = null;
     _errorMessage = null;
+    _researchTopics = [];
+    _selectedResearchTopic = null;
     _previewImageUrl = null;
     _previewImageStatus = null;
     _lastPostedImageUrl = null;

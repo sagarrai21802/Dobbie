@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
-import 'auth_screen.dart';
 import 'linkedin_post_screen.dart';
+import 'account_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -21,87 +19,29 @@ class HomeScreen extends StatelessWidget {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: Consumer<AuthProvider>(
-              builder: (context, authProvider, _) {
-                final user = authProvider.user;
-                return PopupMenuButton<_ProfileMenuAction>(
-                  tooltip: 'Profile',
-                  onSelected: (action) =>
-                      _onProfileMenuSelected(context, action),
-                  itemBuilder: (context) => [
-                    PopupMenuItem<_ProfileMenuAction>(
-                      enabled: false,
-                      child: SizedBox(
-                        width: 220,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              user?.fullName ?? 'Account',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.text,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              user?.email ?? 'No email',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: AppTheme.text.withValues(alpha: 0.65),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem<_ProfileMenuAction>(
-                      value: _ProfileMenuAction.logout,
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.logout,
-                            color: Color(0xFFDC2626),
-                            size: 20,
-                          ),
-                          SizedBox(width: 10),
-                          Text(
-                            'Log Out',
-                            style: TextStyle(color: Color(0xFFDC2626)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  child: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Colors.white.withValues(alpha: 0.2),
-                    child: const Icon(
-                      Icons.person,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AccountScreen()),
                 );
               },
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.white.withValues(alpha: 0.2),
+                child: const Icon(Icons.person, color: Colors.white, size: 20),
+              ),
             ),
           ),
         ],
       ),
-      body: Consumer<AuthProvider>(
-        builder: (context, authProvider, _) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [_buildLinkedInCard(context)],
-              ),
-            ),
-          );
-        },
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [_buildLinkedInCard(context)],
+          ),
+        ),
       ),
     );
   }
@@ -185,45 +125,4 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _onProfileMenuSelected(BuildContext context, _ProfileMenuAction action) {
-    switch (action) {
-      case _ProfileMenuAction.logout:
-        _handleLogout(context);
-    }
-  }
-
-  Future<void> _handleLogout(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sign Out'),
-        content: const Text('Are you sure you want to sign out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFFDC2626),
-            ),
-            child: const Text('Sign Out'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && context.mounted) {
-      await context.read<AuthProvider>().signOut();
-      if (context.mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const AuthScreen()),
-          (route) => false,
-        );
-      }
-    }
-  }
 }
-
-enum _ProfileMenuAction { logout }

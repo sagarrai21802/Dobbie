@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/linkedin_provider.dart';
+import 'providers/profile_provider.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 
@@ -21,6 +22,7 @@ class MyApp extends StatelessWidget {
           create: (_) => AuthProvider()..checkAuthStatus(),
         ),
         ChangeNotifierProvider(create: (_) => LinkedInProvider()),
+        ChangeNotifierProvider(create: (_) => ProfileProvider()),
       ],
       child: MaterialApp(
         title: 'Dobbie',

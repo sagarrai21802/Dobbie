@@ -65,6 +65,40 @@ class CallbackResponse(BaseModel):
 LINKEDIN_EXPIRY_BUFFER_SECONDS = 120
 
 
+def _build_profile_image_context(profile: Optional[dict]) -> str:
+    if not isinstance(profile, dict):
+        return ""
+
+    chunks = []
+    role = str(profile.get("current_role", "")).strip()
+    industry = str(profile.get("industry", "")).strip()
+    tone = str(profile.get("preferred_tone", "")).strip()
+    headline = str(profile.get("headline", "")).strip()
+    skills = profile.get("skills") or []
+
+    if role:
+        chunks.append(f"- Role: {role}")
+    if industry:
+        chunks.append(f"- Industry: {industry}")
+    if headline:
+        chunks.append(f"- Headline: {headline}")
+    if tone:
+        chunks.append(f"- Tone: {tone}")
+    if isinstance(skills, list):
+        clean_skills = [str(item).strip() for item in skills if str(item).strip()]
+        if clean_skills:
+            chunks.append(f"- Skills: {', '.join(clean_skills[:8])}")
+
+    if not chunks:
+        return ""
+
+    return "\n".join([
+        "Personalization context for visual direction:",
+        *chunks,
+        "Use this context only to improve relevance.",
+    ])
+
+
 def _build_app_redirect_url(status: str, message: Optional[str] = None) -> str:
     url = f"{settings.LINKEDIN_APP_REDIRECT_URL}?status={quote(status)}"
     if message:
@@ -296,7 +330,12 @@ async def generate_linkedin_image(
         raise HTTPException(status_code=400, detail="Post content is required")
 
     try:
-        image_url = await freepik_service.generate_image_from_post_text(request.content)
+        profile_context = _build_profile_image_context(current_user.get("profile"))
+        prompt = request.content
+        if profile_context:
+            prompt = f"{request.content}\n\n{profile_context}"
+
+        image_url = await freepik_service.generate_image_from_post_text(prompt)
         if image_url:
             return GenerateLinkedInImageResponse(
                 image_url=image_url,

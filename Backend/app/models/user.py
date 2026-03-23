@@ -3,6 +3,21 @@ from typing import Optional
 from bson import ObjectId
 
 
+def _default_profile_document() -> dict:
+    return {
+        "name": "",
+        "headline": "",
+        "location": "",
+        "current_role": "",
+        "industry": "",
+        "skills": [],
+        "years_experience": None,
+        "preferred_tone": "conversational",
+        "is_complete": False,
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+
 def create_user_document(email: str, password_hash: str, full_name: str) -> dict:
     """Create a new user document for MongoDB."""
     now = datetime.now(timezone.utc)
@@ -11,6 +26,7 @@ def create_user_document(email: str, password_hash: str, full_name: str) -> dict
         "password_hash": password_hash,
         "full_name": full_name.strip(),
         "is_active": True,
+        "profile": _default_profile_document(),
         "created_at": now,
         "updated_at": now,
     }
@@ -23,6 +39,7 @@ def user_to_response(user: dict) -> dict:
         "email": user["email"],
         "full_name": user["full_name"],
         "is_active": user["is_active"],
+        "profile": user.get("profile") or _default_profile_document(),
         "created_at": user["created_at"],
         "updated_at": user["updated_at"],
     }
