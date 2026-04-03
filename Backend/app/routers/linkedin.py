@@ -454,8 +454,10 @@ async def post_to_linkedin(
         logger.error(f"LinkedIn post API error ({e.status_code}): {str(e)}")
         raise HTTPException(status_code=e.status_code, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to post to LinkedIn: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to post to LinkedIn")
+        import traceback
+        logger.error(f"Failed to post to LinkedIn: {type(e).__name__}: {str(e)}")
+        logger.error("Stack trace: %s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to post to LinkedIn: {type(e).__name__}")
 
 
 @router.post("/disconnect")

@@ -1,5 +1,6 @@
 import httpx
 import logging
+import json
 from urllib.parse import urlencode
 from typing import Optional
 from app.config import settings
@@ -99,10 +100,14 @@ class LinkedInService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://api.linkedin.com/v2/userinfo",
-                headers={"Authorization": f"Bearer {access_token}"},
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "X-Restli-Protocol-Version": "2.0.0",
+                    "Linkedin-Version": "20240101",
+                },
             )
             if response.status_code != 200:
-                raise Exception(f"Failed to get user profile: {response.text}")
+                raise Exception(f"Failed to get user profile: {response.status_code} - {response.text}")
             return response.json()
 
     @staticmethod
@@ -113,15 +118,21 @@ class LinkedInService:
         return f"urn:li:person:{linkedin_user_id}"
 
     async def _download_image_bytes(self, image_url: str) -> tuple[bytes, str]:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(image_url)
-            if response.status_code != 200:
-                raise LinkedInAPIError(
-                    message=f"Failed to download generated image: {response.text}",
-                    status_code=response.status_code,
-                )
-            content_type = response.headers.get("Content-Type", "image/png")
-            return response.content, content_type
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+                response = await client.get(image_url)
+                if response.status_code != 200:
+                    raise LinkedInAPIError(
+                        message=f"Failed to download generated image: {response.text}",
+                        status_code=response.status_code,
+                    )
+                content_type = response.headers.get("Content-Type", "image/png")
+                return response.content, content_type
+        except httpx.TimeoutException as e:
+            raise LinkedInAPIError(
+                message=f"Image download timed out: {str(e)}",
+                status_code=504,
+            )
 
     async def _register_image_upload(self, access_token: str, author_urn: str) -> tuple[str, str]:
         payload = {
@@ -145,6 +156,7 @@ class LinkedInService:
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json",
                     "X-Restli-Protocol-Version": "2.0.0",
+                    "Linkedin-Version": "20240101",
                 },
             )
 
@@ -171,19 +183,32 @@ class LinkedInService:
         return upload_url, asset_urn
 
     async def _upload_image_bytes(self, upload_url: str, image_bytes: bytes, content_type: str) -> None:
-        async with httpx.AsyncClient() as client:
-            response = await client.put(
-                upload_url,
-                content=image_bytes,
-                headers={
-                    "Content-Type": content_type,
-                },
-            )
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=30.0)) as client:
+                response = await client.put(
+                    upload_url,
+                    content=image_bytes,
+                    headers={
+                        "Content-Type": content_type,
+                    },
+                )
 
-        if response.status_code not in (200, 201):
+            if response.status_code not in (200, 201):
+                raise LinkedInAPIError(
+                    message=f"Failed to upload image to LinkedIn: {response.text}",
+                    status_code=response.status_code,
+                )
+        except httpx.WriteTimeout as e:
+            logger.warning(f"Image upload timed out, will retry as text-only post: {str(e)}")
             raise LinkedInAPIError(
-                message=f"Failed to upload image to LinkedIn: {response.text}",
-                status_code=response.status_code,
+                message=f"Image upload timed out: {str(e)}",
+                status_code=504,
+            )
+        except httpx.TimeoutException as e:
+            logger.warning(f"Image upload error: {str(e)}")
+            raise LinkedInAPIError(
+                message=f"Image upload failed: {str(e)}",
+                status_code=504,
             )
 
     async def create_post(
@@ -193,6 +218,8 @@ class LinkedInService:
         author_urn: str,
         image_url: Optional[str] = None,
     ) -> dict:
+        logger.info("create_post called - author_urn: %s, content: '%s...', image_url: %s", 
+            author_urn, content[:50] if content else "", image_url)
         media_asset_urn: Optional[str] = None
 
         if image_url:
@@ -230,6 +257,11 @@ class LinkedInService:
                     "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
                 },
             }
+            
+            logger.info("LinkedIn POST Request - author_urn: %s, content_len: %d, has_image: %s", 
+                author_urn, len(content), str(bool(media_asset_urn)))
+            logger.debug("LinkedIn POST payload: %s", json.dumps(post_data, indent=2))
+            
             response = await client.post(
                 "https://api.linkedin.com/v2/ugcPosts",
                 json=post_data,
@@ -237,11 +269,15 @@ class LinkedInService:
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json",
                     "X-Restli-Protocol-Version": "2.0.0",
+                    "Linkedin-Version": "20240101",
                 },
             )
+            
+            logger.info("LinkedIn POST Response - status: %d, body: %s", response.status_code, response.text[:1000])
+            
             if response.status_code != 201:
                 raise LinkedInAPIError(
-                    message=f"Failed to create post: {response.text}",
+                    message=f"Failed to create post (status {response.status_code}): {response.text}",
                     status_code=response.status_code,
                 )
             return response.json()
