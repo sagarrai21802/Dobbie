@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ECFEFF;
+  --foreground: #164E63;
+  --primary: #0891B2;
+  --secondary: #06B6D4;
+  --cta: #059669;
+  --error: #DC2626;
+  --muted: #64748B;
+  --card: #ffffff;
+  --border: #E2E8F0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-cta: var(--cta);
+  --color-error: var(--error);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-border: var(--border);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  min-height: 100vh;
+  overscroll-behavior: none;
+}
+
+body {
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--background);
+}
+
+/* Hide scrollbar but keep functionality */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+/* Prevent pull-to-refresh on mobile */
+body {
+  overscroll-behavior: none;
+}
+
+/* Ensure tap targets are at least 44px */
+button, a, input, select, textarea {
+  min-height: 44px;
+}
+
+/* Remove default iOS styling */
+input, textarea, select {
+  font-size: 16px; /* Prevents iOS zoom on focus */
+}

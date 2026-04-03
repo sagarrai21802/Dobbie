@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 from bson import ObjectId
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from app.database import get_db
 from app.config import settings
@@ -64,6 +64,9 @@ class CallbackResponse(BaseModel):
 
 LINKEDIN_EXPIRY_BUFFER_SECONDS = 120
 
+# Store for web redirect URLs (in production, use Redis or database)
+web_redirect_cache: dict = {}
+
 
 def _build_profile_image_context(profile: Optional[dict]) -> str:
     if not isinstance(profile, dict):
@@ -99,8 +102,10 @@ def _build_profile_image_context(profile: Optional[dict]) -> str:
     ])
 
 
-def _build_app_redirect_url(status: str, message: Optional[str] = None) -> str:
-    url = f"{settings.LINKEDIN_APP_REDIRECT_URL}?status={quote(status)}"
+def _build_app_redirect_url(status: str, message: Optional[str] = None, redirect_url: Optional[str] = None) -> str:
+    # Use provided redirect_url if available (for web), otherwise use mobile app URL
+    base_url = redirect_url if redirect_url else settings.LINKEDIN_APP_REDIRECT_URL
+    url = f"{base_url}?status={quote(status)}"
     if message:
         url = f"{url}&message={quote(message)}"
     return url
@@ -211,10 +216,18 @@ async def _ensure_valid_linkedin_access_token(current_user: dict, db) -> str:
 
 
 @router.get("/authorize", response_model=AuthorizeResponse)
-async def authorize_linkedin(current_user: dict = Depends(get_current_user)):
+async def authorize_linkedin(
+    redirect_url: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user)
+):
     try:
         user_id = str(current_user["_id"])
         state = create_oauth_state(user_id)
+        
+        # If redirect_url is provided (for web), store it with the state
+        if redirect_url:
+            web_redirect_cache[state] = redirect_url
+        
         auth_url = linkedin_service.get_authorization_url(state=state)
         return AuthorizeResponse(authorization_url=auth_url)
     except Exception as e:
@@ -233,7 +246,10 @@ async def linkedin_callback(
     if error:
         message = error_description or error
         logger.warning(f"LinkedIn callback error: {error} ({message})")
-        return RedirectResponse(url=_build_app_redirect_url("error", message))
+        
+        # Check if there's a stored web redirect URL
+        redirect_url = web_redirect_cache.pop(state, None) if state else None
+        return RedirectResponse(url=_build_app_redirect_url("error", message, redirect_url))
 
     if not code:
         logger.warning("LinkedIn callback missing authorization code")
@@ -247,6 +263,9 @@ async def linkedin_callback(
     if not user_id:
         logger.warning(f"LinkedIn callback invalid or tampered state: {state[:20]}...")
         raise HTTPException(status_code=401, detail="Invalid or tampered state")
+
+    # Get the stored redirect URL (for web) before processing
+    web_redirect = web_redirect_cache.pop(state, None)
 
     try:
         token_data = await linkedin_service.exchange_code_for_token(code)
@@ -307,7 +326,9 @@ async def linkedin_callback(
         raise HTTPException(status_code=500, detail="Failed to save LinkedIn credentials")
 
     logger.info(f"LinkedIn connected successfully for user: {user_id}")
-    return RedirectResponse(url=_build_app_redirect_url("success"))
+    
+    # Use web redirect URL if available, otherwise use mobile app URL
+    return RedirectResponse(url=_build_app_redirect_url("success", None, web_redirect))
 
 
 @router.get("/status", response_model=StatusResponse)
