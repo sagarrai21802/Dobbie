@@ -33,12 +33,12 @@ export function AuthWrapper({ children }: AuthWrapperProps) {
   useEffect(() => {
     if (isChecking) return;
 
-    const publicPaths = ['/auth', '/auth/signin', '/auth/signup', '/auth/google/callback', '/auth/linkedin/callback'];
+    const publicPaths = ['/auth/signin', '/auth/signup', '/auth/google/callback', '/auth/linkedin/callback'];
     const isPublicPath = publicPaths.includes(pathname);
 
     if (!isAuthenticated && !isPublicPath) {
-      router.push('/auth');
-    } else if (isAuthenticated && isPublicPath) {
+      router.push('/auth/signin');
+    } else if (isAuthenticated && (pathname === '/auth/signin' || pathname === '/auth/signup')) {
       router.push('/');
     }
   }, [isChecking, isAuthenticated, pathname, router]);

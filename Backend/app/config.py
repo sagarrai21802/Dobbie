@@ -33,6 +33,20 @@ class Settings(BaseSettings):
     GOOGLE_PROJECT_ID: str = ""
     GOOGLE_ANDROID_CLIENT_ID: str = ""
     GOOGLE_IOS_CLIENT_ID: str = ""
+    GOOGLE_WEB_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    
+    # OAuth Redirect URIs
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+    FRONTEND_URL: str = "http://localhost:3000"
+    
+    # OAuth State Secret (for CSRF protection)
+    OAUTH_STATE_SECRET: str = "dev-oauth-state-secret-change-in-production"
+    
+    # Google OAuth URLs
+    GOOGLE_AUTH_URL: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
+    GOOGLE_SCOPE: str = "openid email profile"
 
     class Config:
         env_file = ".env"
@@ -40,3 +54,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

@@ -46,13 +46,13 @@ class ApiClient {
             } else {
               this.clearTokens();
               if (typeof window !== 'undefined') {
-                window.location.href = '/auth';
+                window.location.href = '/auth/signin';
               }
             }
           } catch {
             this.clearTokens();
             if (typeof window !== 'undefined') {
-              window.location.href = '/auth';
+              window.location.href = '/auth/signin';
             }
           }
         }

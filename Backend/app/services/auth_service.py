@@ -4,6 +4,8 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 from google.auth.transport import requests
 from google.oauth2 import id_token
+import httpx
+import urllib.parse
 
 from app.models.user import create_user_document, user_to_response
 from app.utils.security import (
@@ -89,16 +91,17 @@ class AuthService:
             client_ids = [
                 settings.GOOGLE_ANDROID_CLIENT_ID,
                 settings.GOOGLE_IOS_CLIENT_ID,
+                settings.GOOGLE_WEB_CLIENT_ID,
             ]
             
-            # Try to verify with either Android or iOS client ID
+            # Try to verify with either client ID
             payload = None
             for client_id in client_ids:
                 try:
                     payload = id_token.verify_oauth2_token(
                         id_token_str,
                         requests.Request(),
-                        cid=client_id
+                        audience=client_id
                     )
                     break  # Successfully verified
                 except ValueError:
@@ -231,3 +234,108 @@ class AuthService:
         For now, this is a placeholder - token invalidation would require a blacklist.
         """
         return True
+
+    @staticmethod
+    async def google_oauth_exchange(db, authorization_code: str) -> tuple[Optional[dict], Optional[str]]:
+        """
+        Exchange authorization code for tokens and authenticate user.
+        Uses the OAuth 2.0 token exchange flow.
+        Returns (token_response, error_message)
+        """
+        try:
+            # Exchange authorization code for tokens
+            token_data = {
+                "code": authorization_code,
+                "client_id": settings.GOOGLE_WEB_CLIENT_ID,
+                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+                "grant_type": "authorization_code",
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    settings.GOOGLE_TOKEN_URL,
+                    data=token_data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
+            
+            if response.status_code != 200:
+                return None, f"Token exchange failed: {response.text}"
+            
+            tokens_data = response.json()
+            id_token_str = tokens_data.get("id_token")
+            
+            if not id_token_str:
+                return None, "No ID token in response"
+            
+            # Verify the ID token
+            client_ids = [
+                settings.GOOGLE_ANDROID_CLIENT_ID,
+                settings.GOOGLE_IOS_CLIENT_ID,
+                settings.GOOGLE_WEB_CLIENT_ID,
+            ]
+            
+            payload = None
+            for client_id in client_ids:
+                try:
+                    payload = id_token.verify_oauth2_token(
+                        id_token_str,
+                        requests.Request(),
+                        audience=client_id
+                    )
+                    break
+                except ValueError:
+                    continue
+            
+            if payload is None:
+                return None, "Invalid or expired Google ID token"
+            
+            # Extract user info
+            email = payload.get("email", "").lower().strip()
+            full_name = payload.get("name", "Unknown User")
+            google_id = payload.get("sub")
+            
+            if not email or not google_id:
+                return None, "Invalid Google token: missing email or ID"
+            
+            # Check if user exists
+            existing_user = await db.users.find_one({"email": email})
+            
+            if existing_user:
+                if not existing_user.get("is_active", True):
+                    return None, "Account is deactivated"
+                
+                await db.users.update_one(
+                    {"_id": existing_user["_id"]},
+                    {"$set": {
+                        "updated_at": datetime.now(timezone.utc),
+                        "auth_provider": "google"
+                    }}
+                )
+                user = existing_user
+            else:
+                # Create new user
+                user_doc = create_user_document(
+                    email=email,
+                    password_hash="",
+                    full_name=full_name,
+                    auth_provider="google"
+                )
+                result = await db.users.insert_one(user_doc)
+                user_doc["_id"] = result.inserted_id
+                user = user_doc
+            
+            # Generate JWT tokens
+            access_token = create_access_token(data={"sub": str(user["_id"])})
+            refresh_token = create_refresh_token(data={"sub": str(user["_id"])})
+            
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            }, None
+            
+        except Exception as e:
+            return None, f"Google OAuth error: {str(e)}"
+

@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from typing import List
+from fastapi.responses import RedirectResponse
+from typing import List, Optional
+import secrets
+import urllib.parse
+from datetime import datetime, timezone
 
 from app.database import get_db
 from app.schemas.auth import (
@@ -15,6 +19,7 @@ from app.schemas.auth import (
 )
 from app.services.auth_service import AuthService
 from app.utils.dependencies import get_current_user
+from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -89,6 +94,77 @@ async def google_login(google_data: GoogleLogin, db=Depends(get_db)):
         )
     
     return tokens
+
+
+@router.get("/google/authorize")
+async def google_authorize():
+    """
+    Initiate Google OAuth flow - redirect user to Google consent screen.
+    
+    The backend handles the OAuth redirect, state generation, and callback.
+    After successful authentication, user is redirected to frontend with tokens.
+    """
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+    
+    # Store state in query params for the callback (simplified - production should use sessions/cookies)
+    params = {
+        "client_id": settings.GOOGLE_WEB_CLIENT_ID,
+        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": settings.GOOGLE_SCOPE,
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    }
+    
+    auth_url = f"{settings.GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
+    
+    return RedirectResponse(url=auth_url)
+
+
+@router.get("/google/callback")
+async def google_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    db=Depends(get_db)
+):
+    """
+    OAuth callback - exchange authorization code for tokens and redirect to frontend.
+    
+    - **code**: Authorization code from Google
+    - **state**: State parameter for CSRF verification
+    - **error**: Error from Google if authentication failed
+    
+    After successful token exchange, redirects to frontend with JWT tokens.
+    """
+    if error:
+        frontend_url = f"{settings.FRONTEND_URL}/auth/signin?error={urllib.parse.quote(error)}"
+        return RedirectResponse(url=frontend_url)
+    
+    if not code:
+        frontend_url = f"{settings.FRONTEND_URL}/auth/signin?error=missing_code"
+        return RedirectResponse(url=frontend_url)
+    
+    if not state:
+        frontend_url = f"{settings.FRONTEND_URL}/auth/signin?error=missing_state"
+        return RedirectResponse(url=frontend_url)
+    
+    # Exchange authorization code for tokens
+    tokens, auth_error = await AuthService.google_oauth_exchange(
+        db,
+        authorization_code=code
+    )
+    
+    if auth_error:
+        frontend_url = f"{settings.FRONTEND_URL}/auth/signin?error={urllib.parse.quote(auth_error)}"
+        return RedirectResponse(url=frontend_url)
+    
+    # Redirect to frontend with tokens in query params
+    frontend_url = f"{settings.FRONTEND_URL}/auth/google/callback?token={urllib.parse.quote(tokens['access_token'])}&refresh={urllib.parse.quote(tokens['refresh_token'])}"
+    
+    return RedirectResponse(url=frontend_url)
 
 
 @router.post("/login/form", response_model=TokenResponse)

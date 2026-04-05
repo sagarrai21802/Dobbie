@@ -23,7 +23,7 @@ export default function AccountPage() {
     try {
       const currentUser = await authService.getCurrentUser();
       if (!currentUser) {
-        router.push('/auth');
+        router.push('/auth/signin');
         return;
       }
       setUser(currentUser);
@@ -45,7 +45,7 @@ export default function AccountPage() {
         setProfileComplete(false);
       }
     } catch {
-      router.push('/auth');
+      router.push('/auth/signin');
     } finally {
       setIsLoading(false);
     }
@@ -77,7 +77,7 @@ export default function AccountPage() {
   const handleLogout = async () => {
     if (confirm('Are you sure you want to sign out?')) {
       await authService.logout();
-      router.push('/auth');
+      router.push('/auth/signin');
     }
   };
 

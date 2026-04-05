@@ -16,12 +16,12 @@ export default function HomePage() {
       try {
         const currentUser = await authService.getCurrentUser();
         if (!currentUser) {
-          router.push('/auth');
+router.push('/auth/signin');
           return;
         }
         setUser(currentUser);
       } catch {
-        router.push('/auth');
+        router.push('/auth/signin');
       } finally {
         setIsLoading(false);
       }

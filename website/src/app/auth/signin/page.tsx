@@ -6,6 +6,23 @@ import { useRouter } from 'next/navigation';
 import { Input } from '@/components/input';
 import { PrimaryButton, SecondaryButton } from '@/components/buttons';
 import { authService } from '@/lib/auth';
+import { API_CONFIG } from '@/lib/api-config';
+
+const API_BASE_URL = API_CONFIG.baseUrl || 'http://localhost:8000';
+
+function GoogleSignInButton() {
+  const handleGoogleSignIn = () => {
+    // Redirect to backend OAuth authorize endpoint (BFF pattern)
+    window.location.href = `${API_BASE_URL}/api/v1/auth/google/authorize`;
+  };
+
+  return (
+    <SecondaryButton
+      text="Continue with Google"
+      onClick={handleGoogleSignIn}
+    />
+  );
+}
 
 export default function SignInPage() {
   const router = useRouter();
@@ -32,12 +49,6 @@ export default function SignInPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleGoogleSignIn = () => {
-    // For web, we need to use Google Identity Services
-    // This will be implemented after setting up Google OAuth
-    setError('Google Sign-In will be available after OAuth configuration');
   };
 
   return (
@@ -92,10 +103,7 @@ export default function SignInPage() {
             </div>
           </div>
 
-          <SecondaryButton
-            text="Continue with Google"
-            onClick={handleGoogleSignIn}
-          />
+          <GoogleSignInButton />
 
           <p className="text-center text-sm text-[var(--muted)] mt-6">
             Don't have an account?{' '}

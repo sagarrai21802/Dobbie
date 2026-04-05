@@ -12,8 +12,15 @@ async def connect_to_mongo():
     mongo_kwargs = {}
 
     # Force trusted CA bundle for Atlas/TLS connections.
-    if db_url.startswith("mongodb+srv://") or "tls=true" in db_url.lower():
+    if "ssl=true" in db_url.lower() or db_url.startswith("mongodb+srv://"):
         mongo_kwargs["tlsCAFile"] = certifi.where()
+        # Use directConnection=True to bypass DNS SRV resolution and replica set discovery
+        # This connects directly to the first specified host
+        mongo_kwargs["directConnection"] = True
+
+    # Add timeout options
+    mongo_kwargs["connectTimeoutMS"] = 30000
+    mongo_kwargs["serverSelectionTimeoutMS"] = 30000
 
     client = AsyncIOMotorClient(db_url, **mongo_kwargs)
 
