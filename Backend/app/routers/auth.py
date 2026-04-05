@@ -203,10 +203,26 @@ async def google_callback(
         frontend_url = f"{settings.FRONTEND_URL}/auth/signin?error={urllib.parse.quote(auth_error)}"
         return RedirectResponse(url=frontend_url)
     
-    # Redirect to frontend with tokens in query params
-    frontend_url = f"{settings.FRONTEND_URL}/auth/google/callback?token={urllib.parse.quote(tokens['access_token'])}&refresh={urllib.parse.quote(tokens['refresh_token'])}"
+    # Redirect to frontend with access token only (refresh token goes in HttpOnly cookie)
+    frontend_url = f"{settings.FRONTEND_URL}/auth/google/callback?token={urllib.parse.quote(tokens['access_token'])}"
     
-    return RedirectResponse(url=frontend_url)
+    # Set refresh token as HttpOnly cookie (BFF pattern - more secure)
+    response = RedirectResponse(url=frontend_url)
+    
+    refresh_cookie_max_age = 60 * 60 * 24 * settings.REFRESH_TOKEN_EXPIRE_DAYS
+    is_local = settings.DEBUG or "localhost" in settings.FRONTEND_URL
+    
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=not is_local,
+        samesite="lax",
+        max_age=refresh_cookie_max_age,
+        path="/api/v1/auth",
+    )
+    
+    return response
 
 
 @router.post("/login/form")
