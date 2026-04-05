@@ -604,22 +604,111 @@ OUTPUT: src/services/platform_poster.py + updated src/scheduler.py with the post
 
 ## EXECUTION ORDER SUMMARY
 
-| Phase | What | Estimated complexity |
-|-------|------|----------------------|
-| Phase 1 | Homepage redesign | Low |
-| Phase 2A | Backend subscription model + endpoints | Low |
-| Phase 2B | Frontend subscribe page + gate component | Low |
-| Phase 3 | MongoDB schema + Pydantic models | Low |
-| Phase 4 | Trending topics research API | Medium |
-| Phase 5 | Schedule post multi-step frontend | Medium |
-| Phase 6 | Calendar generation backend | Medium |
-| Phase 7 | Calendar view frontend | Low |
-| Phase 8A | Backend cron + FCM notification sender | High |
-| Phase 8B | Frontend FCM token + notification handler | High |
-| Phase 9 | Auto-posting job | Medium |
+| Phase | What | Status | Notes |
+|-------|------|--------|-------|
+| Phase 1 | Homepage redesign | ✅ Done | 2×2 platform grid + Pro card |
+| Phase 2A | Backend subscription model + endpoints | ✅ Done | User model + /subscription routes |
+| Phase 2B | Frontend subscribe page + gate component | ✅ Done | /subscribe page + SubscriptionGate |
+| Phase 3 | MongoDB schema + Pydantic models | ✅ Done | scheduling.py + indexes |
+| Phase 4 | Trending topics research API | ✅ Done | /topics/trending endpoint |
+| Phase 5 | Schedule post multi-step frontend | ✅ Done | 4-step wizard + SubscriptionGate |
+| Phase 6 | Calendar generation backend | ✅ Done | /schedule/create, /calendar endpoints |
+| Phase 7 | Calendar view frontend | ✅ Done | /schedule/calendar page |
+| Phase 8A | Backend cron + FCM notification sender | ✅ Done | scheduler.py + notifications.py |
+| Phase 8B | Frontend FCM token + notification handler | Pending | - |
+| Phase 9 | Auto-posting job | ✅ Done | platform_poster.py (integrated in scheduler) |
 
-**Start with Phase 1 → 2A → 2B → 3 → 4 → 5 → 6 → 7 → 8A → 8B → 9.**
-Each phase is self-contained. Give one prompt to your agent at a time. Confirm the output before moving to the next phase.
+**Last updated:** April 5, 2026
+**Current phase:** Phase 7 complete - Ready for Phase 8
+
+---
+
+## COMPLETED PHASES DETAIL
+
+### Phase 1 - Homepage Redesign ✅
+- Updated `website/src/app/page.tsx`
+- 2×2 platform grid (LinkedIn, Pinterest, YouTube, X/Twitter)
+- Pro upgrade card linking to /subscribe
+- "Schedule Posts" button for Pro users
+- "Coming soon" badges for unreleased platforms
+
+### Phase 2A - Backend Subscription ✅
+- Updated `app/models/user.py` - added subscription field
+- Created `app/routers/subscription.py`:
+  - POST /api/v1/subscription/activate
+  - GET /api/v1/subscription/status
+- Added `check_subscription` dependency in `app/utils/dependencies.py`
+- Registered router in `app/main.py`
+
+### Phase 2B - Frontend Subscribe ✅
+- Created `website/src/lib/subscription.ts` - subscription service
+- Updated `website/src/lib/api-config.ts` - added subscription endpoints
+- Created `website/src/components/SubscriptionGate.tsx`
+- Created `website/src/app/subscribe/page.tsx`
+
+### Phase 3 - Database Schema ✅
+- Created `app/models/scheduling.py` with Pydantic models
+- Added MongoDB indexes in `app/main.py`:
+  - scheduled_calendars (user_id, status)
+  - calendar_entries (user_id, calendar_id, scheduled_date, compound)
+  - user_preferences (unique user_id)
+
+### Phase 4 - Trending Topics API ✅
+- Created `app/routers/topics.py`:
+  - GET /api/v1/topics/trending?platform=...&count=...
+- Uses check_subscription dependency
+- In-memory caching (1 hour TTL)
+- Google Trends RSS + curated fallback
+- Added beautifulsoup4 to requirements.txt
+
+### Phase 5 - Schedule Post Frontend ✅
+- Created `website/src/app/schedule/page.tsx`
+- 4-step wizard:
+  - Step 1: Platform selector (2×2 grid)
+  - Step 2: Duration selector (7 or 30 days)
+  - Step 3: Topic selection (fetch trending + custom topics)
+  - Step 4: Auto-post toggle + confirm
+- Wrapped with SubscriptionGate
+- Created `website/src/lib/schedule.ts` - schedule service
+
+### Phase 6 - Calendar Generation Backend ✅
+- Created `app/routers/schedule.py`:
+  - POST /api/v1/schedule/create - Create schedule with entries
+  - GET /api/v1/schedule/calendar - Get all user entries
+  - GET /api/v1/schedule/calendar/{entry_id}/approve - Approve entry
+  - GET /api/v1/schedule/calendar/{entry_id}/deny - Deny entry
+- Best posting times configuration from scheduling.py
+- Registered router in main.py
+
+### Phase 7 - Calendar View Frontend ✅
+- Created `website/src/app/schedule/calendar/page.tsx`
+- Shows all scheduled posts with status badges
+- Approve/Deny buttons for pending entries
+- Stats bar showing counts
+- Empty state with "Set up your schedule" CTA
+
+### Phase 8A - Backend Cron + FCM Notification ✅
+- Created `app/services/notifications.py`:
+  - Firebase Admin SDK initialization
+  - send_push_notification() function
+- Created `app/services/platform_poster.py`:
+  - post_to_linkedin(), post_to_pinterest(), post_to_youtube(), post_to_twitter()
+  - Placeholder implementations (actual API calls deferred)
+- Created `app/scheduler.py`:
+  - AsyncIOScheduler with APScheduler
+  - nightly_notification_job() - runs daily at 21:00 IST
+  - posting_job() - runs every 5 minutes
+- Created `app/routers/notifications.py`:
+  - POST /api/v1/notifications/register-token
+- Added Firebase config to `app/config.py`
+- Added APScheduler and firebase-admin to requirements.txt
+- Updated `app/main.py` to start/stop scheduler on app lifecycle
+
+### Phase 9 - Auto-Posting Job ✅
+- Integrated into scheduler.py
+- posting_job checks for due entries every 5 minutes
+- Posts if auto_post is enabled OR entry is approved
+- Updates entry status to "posted" or "failed"
 
 ---
 

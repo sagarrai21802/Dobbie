@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
     GOOGLE_SCOPE: str = "openid email profile"
 
+    # Firebase Configuration
+    FIREBASE_CREDENTIALS_PATH: str = ""
+    GOOGLE_APPLICATION_CREDENTIALS: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True
