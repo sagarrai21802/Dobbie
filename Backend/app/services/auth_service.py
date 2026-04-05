@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
@@ -6,8 +6,10 @@ from google.auth.transport import requests
 from google.oauth2 import id_token
 import httpx
 import urllib.parse
+import secrets
+import hashlib
 
-from app.models.user import create_user_document, user_to_response
+from app.models.user import create_user_document, user_to_response, _default_profile_document
 from app.utils.security import (
     hash_password,
     verify_password,
@@ -17,6 +19,73 @@ from app.utils.security import (
     validate_password_strength,
 )
 from app.config import settings
+
+
+async def create_refresh_token_db(db, user_id: str) -> str:
+    """
+    Create a secure refresh token stored in MongoDB (not JWT).
+    Returns the raw token that will be sent to the client in HttpOnly cookie.
+    """
+    raw_token = secrets.token_urlsafe(64)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    await db.refresh_tokens.insert_one({
+        "token_hash": token_hash,
+        "user_id": user_id,
+        "expires_at": expires_at,
+        "created_at": now,
+        "used": False,
+        "replaced_by": None,
+    })
+    
+    return raw_token
+
+
+async def rotate_refresh_token(db, old_token_hash: str, user_id: str) -> tuple[str, str]:
+    """
+    Rotate a refresh token: mark old as used, create new one.
+    Returns (new_access_token, new_raw_refresh_token).
+    """
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    new_raw_token = secrets.token_urlsafe(64)
+    new_token_hash = hashlib.sha256(new_raw_token.encode()).hexdigest()
+    
+    await db.refresh_tokens.update_one(
+        {"token_hash": old_token_hash},
+        {"$set": {"used": True, "replaced_by": new_token_hash}}
+    )
+    
+    await db.refresh_tokens.insert_one({
+        "token_hash": new_token_hash,
+        "user_id": user_id,
+        "expires_at": expires_at,
+        "created_at": now,
+        "used": False,
+        "replaced_by": None,
+    })
+    
+    new_access_token = create_access_token(data={"sub": user_id})
+    return new_access_token, new_raw_token
+
+
+async def cleanup_expired_tokens(db) -> int:
+    """
+    Delete all refresh tokens that are expired or already used.
+    Returns count of deleted tokens.
+    """
+    now = datetime.now(timezone.utc)
+    result = await db.refresh_tokens.delete_many({
+        "$or": [
+            {"expires_at": {"$lt": now}},
+            {"used": True},
+        ]
+    })
+    return result.deleted_count
 
 
 class AuthService:
@@ -64,7 +133,7 @@ class AuthService:
             return None, "Account is deactivated"
         
         access_token = create_access_token(data={"sub": str(user["_id"])})
-        refresh_token = create_refresh_token(data={"sub": str(user["_id"])})
+        refresh_token = await create_refresh_token_db(db, str(user["_id"]))
         
         await db.users.update_one(
             {"_id": user["_id"]},
@@ -83,6 +152,7 @@ class AuthService:
         """
         Authenticate user via Google ID token and return JWT tokens.
         Verifies token and upserts user by email.
+        Also fetches profile picture and additional user info.
         Returns (token_response, error_message)
         """
         try:
@@ -105,7 +175,7 @@ class AuthService:
                     )
                     break  # Successfully verified
                 except ValueError:
-                    continue  # Try next client ID
+                    continue
             
             if payload is None:
                 return None, "Invalid or expired Google ID token"
@@ -115,6 +185,10 @@ class AuthService:
             full_name = payload.get("name", "Unknown User")
             google_id = payload.get("sub")
             
+            # Get additional profile info from Google
+            profile_picture = payload.get("picture", "")
+            locale = payload.get("locale", "")
+            
             if not email or not google_id:
                 return None, "Invalid Google token: missing email or ID"
             
@@ -122,33 +196,52 @@ class AuthService:
             existing_user = await db.users.find_one({"email": email})
             
             if existing_user:
-                # User exists - just update last login time if needed
+                # User exists - update profile info if new data available
                 if not existing_user.get("is_active", True):
                     return None, "Account is deactivated"
                 
+                update_data = {
+                    "updated_at": datetime.now(timezone.utc),
+                    "auth_provider": "google",
+                }
+                
+                # Update profile picture if available
+                if profile_picture:
+                    existing_profile = existing_user.get("profile") or {}
+                    if not existing_profile.get("profile_picture"):
+                        update_data["profile.profile_picture"] = profile_picture
+                        update_data["profile.name"] = full_name
+                        update_data["profile.locale"] = locale
+                
                 await db.users.update_one(
                     {"_id": existing_user["_id"]},
-                    {"$set": {
-                        "updated_at": datetime.now(timezone.utc),
-                        "auth_provider": "google"  # Mark as Google auth
-                    }}
+                    {"$set": update_data}
                 )
-                user = existing_user
+                
+                # Fetch fresh user data
+                user = await db.users.find_one({"_id": existing_user["_id"]})
             else:
                 # Create new user from Google login (no password needed)
+                profile = _default_profile_document()
+                profile["name"] = full_name
+                profile["profile_picture"] = profile_picture
+                profile["locale"] = locale
+                
                 user_doc = create_user_document(
                     email=email,
-                    password_hash="",  # Empty password for Google users
+                    password_hash="",
                     full_name=full_name,
                     auth_provider="google"
                 )
+                user_doc["profile"] = profile
+                
                 result = await db.users.insert_one(user_doc)
                 user_doc["_id"] = result.inserted_id
                 user = user_doc
             
             # Generate JWT tokens
             access_token = create_access_token(data={"sub": str(user["_id"])})
-            refresh_token = create_refresh_token(data={"sub": str(user["_id"])})
+            refresh_token = await create_refresh_token_db(db, str(user["_id"]))
             
             return {
                 "access_token": access_token,
@@ -165,34 +258,26 @@ class AuthService:
     @staticmethod
     async def refresh_token(db, refresh_token: str) -> tuple[Optional[dict], Optional[str]]:
         """
-        Refresh access token using refresh token.
+        Refresh access token using refresh token from cookie.
         Returns (token_response, error_message)
         """
-        payload = decode_token(refresh_token)
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
         
-        if payload is None:
-            return None, "Invalid or expired refresh token"
+        db_token = await db.refresh_tokens.find_one({"token_hash": token_hash})
         
-        if payload.get("type") != "refresh":
-            return None, "Invalid token type"
+        if not db_token:
+            return None, "invalid_token"
         
-        user_id = payload.get("sub")
-        if not user_id:
-            return None, "Invalid token payload"
+        if db_token.get("used", False):
+            await db.refresh_tokens.delete_many({"user_id": db_token["user_id"]})
+            return None, "token_reuse_detected"
         
-        try:
-            user = await db.users.find_one({"_id": ObjectId(user_id)})
-        except Exception:
-            return None, "Invalid user ID"
+        if db_token.get("expires_at") < datetime.now(timezone.utc):
+            return None, "refresh_token_expired"
         
-        if not user:
-            return None, "User not found"
+        user_id = db_token["user_id"]
         
-        if not user.get("is_active", True):
-            return None, "Account is deactivated"
-        
-        new_access_token = create_access_token(data={"sub": str(user["_id"])})
-        new_refresh_token = create_refresh_token(data={"sub": str(user["_id"])})
+        new_access_token, new_refresh_token = await rotate_refresh_token(db, token_hash, user_id)
         
         return {
             "access_token": new_access_token,
@@ -230,10 +315,17 @@ class AuthService:
     @staticmethod
     async def logout(db, refresh_token: str) -> bool:
         """
-        Logout user by invalidating refresh token.
-        For now, this is a placeholder - token invalidation would require a blacklist.
+        Logout user by invalidating refresh token in DB.
         """
-        return True
+        try:
+            token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+            await db.refresh_tokens.update_one(
+                {"token_hash": token_hash},
+                {"$set": {"used": True}}
+            )
+            return True
+        except Exception:
+            return True
 
     @staticmethod
     async def google_oauth_exchange(db, authorization_code: str) -> tuple[Optional[dict], Optional[str]]:
@@ -264,6 +356,7 @@ class AuthService:
             
             tokens_data = response.json()
             id_token_str = tokens_data.get("id_token")
+            access_token = tokens_data.get("access_token")  # Get access token for userinfo call
             
             if not id_token_str:
                 return None, "No ID token in response"
@@ -290,10 +383,28 @@ class AuthService:
             if payload is None:
                 return None, "Invalid or expired Google ID token"
             
-            # Extract user info
+            # Extract user info from ID token
             email = payload.get("email", "").lower().strip()
             full_name = payload.get("name", "Unknown User")
             google_id = payload.get("sub")
+            
+            # Get additional profile info from userinfo endpoint using access token
+            profile_picture = ""
+            locale = ""
+            
+            if access_token:
+                try:
+                    async with httpx.AsyncClient() as client:
+                        userinfo_response = await client.get(
+                            settings.GOOGLE_USERINFO_URL,
+                            headers={"Authorization": f"Bearer {access_token}"}
+                        )
+                        if userinfo_response.status_code == 200:
+                            userinfo = userinfo_response.json()
+                            profile_picture = userinfo.get("picture", "")
+                            locale = userinfo.get("locale", "")
+                except Exception:
+                    pass  # If userinfo fails, continue without picture
             
             if not email or not google_id:
                 return None, "Invalid Google token: missing email or ID"
@@ -305,29 +416,46 @@ class AuthService:
                 if not existing_user.get("is_active", True):
                     return None, "Account is deactivated"
                 
+                update_data = {
+                    "updated_at": datetime.now(timezone.utc),
+                    "auth_provider": "google",
+                }
+                
+                if profile_picture:
+                    existing_profile = existing_user.get("profile") or {}
+                    if not existing_profile.get("profile_picture"):
+                        update_data["profile.profile_picture"] = profile_picture
+                        update_data["profile.name"] = full_name
+                        update_data["profile.locale"] = locale
+                
                 await db.users.update_one(
                     {"_id": existing_user["_id"]},
-                    {"$set": {
-                        "updated_at": datetime.now(timezone.utc),
-                        "auth_provider": "google"
-                    }}
+                    {"$set": update_data}
                 )
-                user = existing_user
+                
+                user = await db.users.find_one({"_id": existing_user["_id"]})
             else:
                 # Create new user
+                profile = _default_profile_document()
+                profile["name"] = full_name
+                profile["profile_picture"] = profile_picture
+                profile["locale"] = locale
+                
                 user_doc = create_user_document(
                     email=email,
                     password_hash="",
                     full_name=full_name,
                     auth_provider="google"
                 )
+                user_doc["profile"] = profile
+                
                 result = await db.users.insert_one(user_doc)
                 user_doc["_id"] = result.inserted_id
                 user = user_doc
             
             # Generate JWT tokens
             access_token = create_access_token(data={"sub": str(user["_id"])})
-            refresh_token = create_refresh_token(data={"sub": str(user["_id"])})
+            refresh_token = await create_refresh_token_db(db, str(user["_id"]))
             
             return {
                 "access_token": access_token,

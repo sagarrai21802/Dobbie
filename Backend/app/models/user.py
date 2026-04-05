@@ -14,6 +14,9 @@ def _default_profile_document() -> dict:
         "years_experience": None,
         "preferred_tone": "conversational",
         "is_complete": False,
+        "profile_picture": "",
+        "locale": "",
+        "gender": "",
         "updated_at": datetime.now(timezone.utc),
     }
 

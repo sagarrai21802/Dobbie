@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "dev-jwt-secret-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # Gemini API Configuration
     GEMINI_API_KEY: str = ""
@@ -46,7 +46,8 @@ class Settings(BaseSettings):
     # Google OAuth URLs
     GOOGLE_AUTH_URL: str = "https://accounts.google.com/o/oauth2/v2/auth"
     GOOGLE_TOKEN_URL: str = "https://oauth2.googleapis.com/token"
-    GOOGLE_SCOPE: str = "openid email profile"
+    GOOGLE_SCOPE: str = "openid email profile https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email"
+    GOOGLE_USERINFO_URL: str = "https://www.googleapis.com/oauth2/v2/userinfo"
 
     # Firebase Configuration
     FIREBASE_CREDENTIALS_PATH: str = ""

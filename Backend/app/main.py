@@ -37,6 +37,11 @@ async def create_indexes(app: FastAPI):
     # User indexes
     await app.state.db.users.create_index("email", unique=True)
     
+    # Refresh token indexes
+    await app.state.db.refresh_tokens.create_index("token_hash", unique=True)
+    await app.state.db.refresh_tokens.create_index("user_id")
+    await app.state.db.refresh_tokens.create_index("expires_at")
+    
     # Scheduling indexes
     await app.state.db.scheduled_calendars.create_index("user_id")
     await app.state.db.scheduled_calendars.create_index("status")

@@ -42,6 +42,19 @@ def create_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
     
+    # Add token cleanup job - runs every Sunday at 3:00 IST
+    scheduler.add_job(
+        token_cleanup_job,
+        trigger="cron",
+        day_of_week="sun",
+        hour=3,
+        minute=0,
+        timezone=ZoneInfo("Asia/Kolkata"),
+        id="token_cleanup",
+        name="Clean up expired/used refresh tokens",
+        replace_existing=True,
+    )
+    
     logger.info("Scheduler configured with jobs: nightly_notification (21:00 IST), posting_job (every 5 min)")
     
     return scheduler
@@ -242,6 +255,29 @@ async def posting_job():
                 
     except Exception as e:
         logger.error(f"Posting job failed: {e}")
+
+
+async def token_cleanup_job():
+    """
+    Job that runs weekly to clean up expired and used refresh tokens.
+    """
+    from app.services.auth_service import cleanup_expired_tokens
+    
+    logger.info("Starting token cleanup job")
+    
+    try:
+        from app.main import app
+        
+        db = app.state.db if hasattr(app.state, 'db') else None
+        if db is None:
+            logger.error("Database not available")
+            return
+        
+        deleted_count = await cleanup_expired_tokens(db)
+        logger.info(f"Token cleanup job completed. Deleted {deleted_count} expired/used tokens")
+        
+    except Exception as e:
+        logger.error(f"Token cleanup job failed: {e}")
 
 
 def start_scheduler():

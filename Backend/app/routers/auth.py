@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from typing import List, Optional
 import secrets
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from app.database import get_db
 from app.schemas.auth import (
@@ -49,13 +49,15 @@ async def register(user_data: UserRegister, db=Depends(get_db)):
     return user
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login")
 async def login(user_data: UserLogin, db=Depends(get_db)):
     """
     Authenticate user and return JWT tokens.
     
     - **email**: User's email address
     - **password**: User's password
+    
+    Returns access_token in body, refresh_token in HttpOnly cookie.
     """
     tokens, error = await AuthService.login(
         db,
@@ -69,10 +71,30 @@ async def login(user_data: UserLogin, db=Depends(get_db)):
             detail=error
         )
     
-    return tokens
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={
+        "access_token": tokens["access_token"],
+        "token_type": "bearer",
+    })
+    
+    refresh_cookie_max_age = 60 * 60 * 24 * settings.REFRESH_TOKEN_EXPIRE_DAYS
+    
+    is_local = settings.DEBUG or "localhost" in settings.FRONTEND_URL
+    
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=not is_local,
+        samesite="lax",
+        max_age=refresh_cookie_max_age,
+        path="/api/v1/auth",
+    )
+    
+    return response
 
 
-@router.post("/google", response_model=TokenResponse)
+@router.post("/google")
 async def google_login(google_data: GoogleLogin, db=Depends(get_db)):
     """
     Authenticate user via Google ID token and return JWT tokens.
@@ -80,7 +102,7 @@ async def google_login(google_data: GoogleLogin, db=Depends(get_db)):
     - **id_token**: Google ID token from flutter_signin_google
     
     The token is verified server-side and the user is created or updated
-    in the database. Returns standard JWT tokens for subsequent requests.
+    in the database. Returns access_token in body, refresh_token in HttpOnly cookie.
     """
     tokens, error = await AuthService.google_login(
         db,
@@ -93,7 +115,27 @@ async def google_login(google_data: GoogleLogin, db=Depends(get_db)):
             detail=error
         )
     
-    return tokens
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={
+        "access_token": tokens["access_token"],
+        "token_type": "bearer",
+    })
+    
+    refresh_cookie_max_age = 60 * 60 * 24 * settings.REFRESH_TOKEN_EXPIRE_DAYS
+    
+    is_local = settings.DEBUG or "localhost" in settings.FRONTEND_URL
+    
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=not is_local,
+        samesite="lax",
+        max_age=refresh_cookie_max_age,
+        path="/api/v1/auth",
+    )
+    
+    return response
 
 
 @router.get("/google/authorize")
@@ -167,13 +209,15 @@ async def google_callback(
     return RedirectResponse(url=frontend_url)
 
 
-@router.post("/login/form", response_model=TokenResponse)
+@router.post("/login/form")
 async def login_form(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
     """
     OAuth2 compatible login endpoint (for Swagger UI).
     
     - **username**: Email address (OAuth2 standard uses username field)
     - **password**: User's password
+    
+    Returns access_token in body, refresh_token in HttpOnly cookie.
     """
     tokens, error = await AuthService.login(
         db,
@@ -187,20 +231,43 @@ async def login_form(form_data: OAuth2PasswordRequestForm = Depends(), db=Depend
             detail=error
         )
     
-    return tokens
-
-
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(token_data: TokenRefresh, db=Depends(get_db)):
-    """
-    Refresh access token using refresh token.
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={
+        "access_token": tokens["access_token"],
+        "token_type": "bearer",
+    })
     
-    - **refresh_token**: Valid refresh token from login
-    """
-    tokens, error = await AuthService.refresh_token(
-        db,
-        refresh_token=token_data.refresh_token
+    refresh_cookie_max_age = 60 * 60 * 24 * settings.REFRESH_TOKEN_EXPIRE_DAYS
+    
+    is_local = settings.DEBUG or "localhost" in settings.FRONTEND_URL
+    
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=not is_local,
+        samesite="lax",
+        max_age=refresh_cookie_max_age,
+        path="/api/v1/auth",
     )
+    
+    return response
+
+
+@router.post("/refresh")
+async def refresh_token(request: Request, db=Depends(get_db)):
+    """
+    Refresh access token using refresh token from HttpOnly cookie.
+    """
+    refresh_token = request.cookies.get("refresh_token")
+    
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="no_refresh_token"
+        )
+    
+    tokens, error = await AuthService.refresh_token(db, refresh_token)
     
     if error:
         raise HTTPException(
@@ -208,12 +275,32 @@ async def refresh_token(token_data: TokenRefresh, db=Depends(get_db)):
             detail=error
         )
     
-    return tokens
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={
+        "access_token": tokens["access_token"],
+        "token_type": "bearer",
+    })
+    
+    refresh_cookie_max_age = 60 * 60 * 24 * settings.REFRESH_TOKEN_EXPIRE_DAYS
+    
+    is_local = settings.DEBUG or "localhost" in settings.FRONTEND_URL
+    
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=not is_local,
+        samesite="lax",
+        max_age=refresh_cookie_max_age,
+        path="/api/v1/auth",
+    )
+    
+    return response
 
 
-@router.post("/logout", response_model=MessageResponse)
+@router.post("/logout")
 async def logout(
-    token_data: TokenRefresh,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -221,9 +308,18 @@ async def logout(
     Logout user (invalidate session).
     
     Requires valid access token in header.
+    Clears the refresh token cookie.
     """
-    await AuthService.logout(db, token_data.refresh_token)
-    return MessageResponse(message="Successfully logged out")
+    refresh_token = request.cookies.get("refresh_token")
+    
+    if refresh_token:
+        await AuthService.logout(db, refresh_token)
+    
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={"logged_out": True})
+    response.delete_cookie("refresh_token", path="/api/v1/auth")
+    
+    return response
 
 
 @router.get("/me", response_model=UserResponse)

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../providers/auth_provider.dart';
 import 'linkedin_post_screen.dart';
 import 'account_screen.dart';
 
@@ -8,6 +10,9 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+    final user = authProvider.user;
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -28,7 +33,16 @@ class HomeScreen extends StatelessWidget {
               child: CircleAvatar(
                 radius: 18,
                 backgroundColor: Colors.white.withValues(alpha: 0.2),
-                child: const Icon(Icons.person, color: Colors.white, size: 20),
+                backgroundImage:
+                    user?.profilePicture != null &&
+                        user!.profilePicture!.isNotEmpty
+                    ? NetworkImage(user.profilePicture!)
+                    : null,
+                child:
+                    user?.profilePicture == null ||
+                        user!.profilePicture!.isEmpty
+                    ? const Icon(Icons.person, color: Colors.white, size: 20)
+                    : null,
               ),
             ),
           ),
@@ -124,5 +138,4 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-
 }

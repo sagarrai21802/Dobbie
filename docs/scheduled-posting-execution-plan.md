@@ -615,7 +615,7 @@ OUTPUT: src/services/platform_poster.py + updated src/scheduler.py with the post
 | Phase 6 | Calendar generation backend | ✅ Done | /schedule/create, /calendar endpoints |
 | Phase 7 | Calendar view frontend | ✅ Done | /schedule/calendar page |
 | Phase 8A | Backend cron + FCM notification sender | ✅ Done | scheduler.py + notifications.py |
-| Phase 8B | Frontend FCM token + notification handler | Pending | - |
+| Phase 8B | Frontend FCM token + notification handler | 🔄 Next | - |
 | Phase 9 | Auto-posting job | ✅ Done | platform_poster.py (integrated in scheduler) |
 
 **Last updated:** April 5, 2026

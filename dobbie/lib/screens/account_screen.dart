@@ -55,10 +55,19 @@ class _AccountScreenState extends State<AccountScreen> {
               ),
               child: Row(
                 children: [
-                  const CircleAvatar(
+                  CircleAvatar(
                     radius: 26,
-                    backgroundColor: Color(0xFFBAE6FD),
-                    child: Icon(Icons.person, color: AppTheme.text),
+                    backgroundColor: const Color(0xFFBAE6FD),
+                    backgroundImage:
+                        user?.profilePicture != null &&
+                            user!.profilePicture!.isNotEmpty
+                        ? NetworkImage(user.profilePicture!)
+                        : null,
+                    child:
+                        user?.profilePicture == null ||
+                            user!.profilePicture!.isEmpty
+                        ? const Icon(Icons.person, color: AppTheme.text)
+                        : null,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
