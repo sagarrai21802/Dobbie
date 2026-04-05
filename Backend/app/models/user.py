@@ -18,6 +18,15 @@ def _default_profile_document() -> dict:
     }
 
 
+def _default_subscription_document() -> dict:
+    """Default subscription fields for new users."""
+    return {
+        "status": "free",  # "free" | "pro"
+        "started_at": None,
+        "expires_at": None,
+    }
+
+
 def create_user_document(email: str, password_hash: str, full_name: str, auth_provider: str = "email") -> dict:
     """Create a new user document for MongoDB."""
     now = datetime.now(timezone.utc)
@@ -28,6 +37,7 @@ def create_user_document(email: str, password_hash: str, full_name: str, auth_pr
         "auth_provider": auth_provider,  # 'email', 'google', 'linkedin', etc.
         "is_active": True,
         "profile": _default_profile_document(),
+        "subscription": _default_subscription_document(),
         "created_at": now,
         "updated_at": now,
     }
@@ -41,6 +51,7 @@ def user_to_response(user: dict) -> dict:
         "full_name": user["full_name"],
         "is_active": user["is_active"],
         "profile": user.get("profile") or _default_profile_document(),
+        "subscription": user.get("subscription") or _default_subscription_document(),
         "created_at": user["created_at"],
         "updated_at": user["updated_at"],
     }

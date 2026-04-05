@@ -1,7 +1,6 @@
 # ===========================================
 # SENSITIVE FILES - NEVER COMMIT
 # ===========================================
-website
 # Secrets configuration (contains API keys)
 Dobbie/Config/Secrets.xcconfig
 
@@ -38,3 +37,8 @@ DerivedData/
 *.iml
 .vscode/
 *.DS_Store
+
+# ===========================================
+# Website
+# ===========================================
+website/

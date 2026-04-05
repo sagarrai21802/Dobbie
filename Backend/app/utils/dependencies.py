@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
+from datetime import datetime, timezone
 
 from app.database import get_db
 from app.utils.security import decode_token
@@ -88,3 +89,38 @@ async def get_current_user_optional(
         return None
 
     return user
+
+
+async def check_subscription(
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    """
+    Dependency to check if user has an active pro subscription.
+    Raises 403 if subscription is not active.
+    """
+    subscription = current_user.get("subscription", {})
+    sub_status = subscription.get("status", "free")
+    expires_at = subscription.get("expires_at")
+    
+    # Check if user has pro status
+    if sub_status != "pro":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="subscription_required"
+        )
+    
+    # Check if subscription has expired
+    if expires_at is not None:
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+        if expires_at < datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="subscription_expired"
+            )
+    
+    return current_user
